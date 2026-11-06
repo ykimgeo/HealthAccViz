@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Healthcare Access Charlotte</title>
+  <meta name="description" content="Interactive GeoVisualization of healthcare access in Charlotte, NC (GIS Day 2026).">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-title">
+      <h1>Healthcare Access in Charlotte</h1>
+      <p>Subtitle placeholder</p>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab is-active" role="tab" id="tab-dashboard" aria-selected="true" aria-controls="view-dashboard" data-view="dashboard">Dashboard</button>
+      <button class="tab" role="tab" id="tab-methods" aria-selected="false" aria-controls="view-methods" data-view="methods">Methods</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Dashboard view: 3 columns -->
+    <section id="view-dashboard" class="view dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+      <aside class="col col-left" aria-label="Controls">
+        <section class="card" id="panel-controls">
+          <h2>Controls</h2>
+          <p class="placeholder">Indicator and layer controls</p>
+        </section>
+        <section class="card" id="panel-legend">
+          <h2>Legend</h2>
+          <p class="placeholder">Map legend</p>
+        </section>
+      </aside>
+
+      <div class="col col-map">
+        <div id="map" aria-label="Map of Charlotte neighborhood profile areas"></div>
+      </div>
+
+      <aside class="col col-right" aria-label="Charts and details">
+        <section class="card" id="panel-summary">
+          <h2>Summary</h2>
+          <p class="placeholder">Summary statistics</p>
+        </section>
+        <section class="card" id="panel-charts">
+          <h2>Charts</h2>
+          <p class="placeholder">Ranking and scatter plot</p>
+        </section>
+        <section class="card" id="panel-detail">
+          <h2>Selected NPA</h2>
+          <p class="placeholder">Click an area on the map</p>
+        </section>
+      </aside>
+    </section>
+
+    <!-- Methods view: write-up -->
+    <section id="view-methods" class="view methods" role="tabpanel" aria-labelledby="tab-methods" hidden>
+      <article class="prose">
+        <h2>Data overview</h2>
+        <p class="placeholder">Data sources, years, units, preprocessing</p>
+        <h2>Interpretation</h2>
+        <p class="placeholder">How to read the map</p>
+        <h2>Summary</h2>
+        <p class="placeholder">Main findings</p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>Data: Charlotte Quality of Life Explorer / Carolinas Regional Explorer, UNC Charlotte Urban Institute</span>
+    <span>GIS Day 2026 · AI Interactive GeoVisualization Competition</span>
+  </footer>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
