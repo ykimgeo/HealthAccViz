@@ -27,13 +27,17 @@
       <aside class="col col-left" aria-label="Controls">
         <section class="card" id="panel-controls">
           <h2>Controls</h2>
-          <p class="placeholder">Indicator and layer controls</p>
+          <fieldset class="indicator-fieldset">
+            <legend>Choropleth indicator</legend>
+            <div id="indicator-options"></div>
+          </fieldset>
           <p id="data-status" class="status" role="status">Loading data…</p>
         </section>
         <section class="card" id="panel-legend">
           <h2>Legend</h2>
-          <ul class="legend">
-            <li><span class="sw sw-npa"></span>NPA boundary</li>
+          <div id="choropleth-legend"></div>
+          <p class="legend-note">Each class includes its upper bound.</p>
+          <ul class="legend legend-symbols">
             <li><span class="sw sw-hosp"></span>Hospital (open)</li>
             <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
           </ul>

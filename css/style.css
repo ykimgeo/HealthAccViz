@@ -104,6 +104,17 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .sw-hosp { border-radius: 50%; background: #c0392b; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #8a2b21; }
 .sw-hosp-closed { border-radius: 50%; background: #fff; border: 1.5px dashed #777; }
 .legend-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.legend-title { margin: 0; font-weight: 600; }
+.legend-sub { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.legend-range { flex: 1; font-variant-numeric: tabular-nums; }
+.legend-count { font-size: 12px; color: var(--muted); }
+.sw-class { border: 1px solid #777; }
+.legend-symbols { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* indicator selector */
+.indicator-fieldset { margin: 0; padding: 0; border: 0; }
+.indicator-fieldset legend { padding: 0; margin-bottom: 4px; font-weight: 600; }
+.indicator-option { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
 
 /* selected NPA detail */
 .detail-title { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
@@ -111,6 +122,7 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .detail-list dt { color: var(--muted); }
 .detail-list dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .detail-list dd.is-missing { color: var(--muted); font-style: italic; }
+.detail-list dt.is-active, .detail-list dd.is-active { color: var(--text); font-weight: 700; }
 
 /* map tooltips */
 .tip-title { font-weight: 600; }
