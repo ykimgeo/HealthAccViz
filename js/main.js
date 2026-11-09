@@ -211,7 +211,6 @@
         });
       },
     }).addTo(map);
-    map.fitBounds(npaLayer.getBounds());
     buildIndicatorControl();
     updateLegend();
   }
@@ -263,6 +262,8 @@
     .then(function (res) {
       addNPA(res[0]);
       var hosp = addHospitals(res[1]);
+      // Fit to NPAs and all hospitals, including those outside Mecklenburg County.
+      map.fitBounds(npaLayer.getBounds().extend(hosp.getBounds()), { padding: [20, 20] });
       L.control.layers(null, { "NPA boundaries": npaLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
       setStatus(res[0].features.length + " NPAs, " + res[1].features.length + " hospitals loaded.");
     })
