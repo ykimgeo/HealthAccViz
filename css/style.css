@@ -83,6 +83,24 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
   background: #e8ecf0;
 }
 
+.map-notice {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  margin: 0;
+  padding: 6px 12px;
+  max-width: 90%;
+  background: #fff8e1;
+  border: 1px solid #e0b84a;
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: center;
+}
+.map-notice[hidden] { display: none; }
+.map-notice--static { position: static; transform: none; margin: 12px; }
+
 .card {
   padding: 12px 14px;
   background: var(--surface);
