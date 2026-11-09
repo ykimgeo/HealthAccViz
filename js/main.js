@@ -2,12 +2,18 @@
   "use strict";
 
   // ----- map -----
-  var map = L.map("map", { zoomControl: true }).setView([35.227, -80.843], 10);
+  var map = L.map("map").setView([35.227, -80.843], 10);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    subdomains: "abcd",
+    maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-    maxZoom: 18,
   }).addTo(map);
+
+  // Leaflet measures its container once; re-measure when the layout settles or changes.
+  function refreshSize() { map.invalidateSize(); }
+  window.addEventListener("load", refreshSize);
+  window.addEventListener("resize", refreshSize);
 
   // ----- tabs -----
   var tabs = document.querySelectorAll(".tab");
@@ -25,12 +31,10 @@
     Object.keys(views).forEach(function (k) {
       views[k].hidden = k !== name;
     });
-    if (name === "dashboard") map.invalidateSize();
+    if (name === "dashboard") refreshSize();
   }
 
   tabs.forEach(function (t) {
     t.addEventListener("click", function () { showView(t.dataset.view); });
   });
-
-  window.addEventListener("resize", function () { map.invalidateSize(); });
 })();
