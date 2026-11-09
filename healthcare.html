@@ -28,10 +28,16 @@
         <section class="card" id="panel-controls">
           <h2>Controls</h2>
           <p class="placeholder">Indicator and layer controls</p>
+          <p id="data-status" class="status" role="status">Loading data…</p>
         </section>
         <section class="card" id="panel-legend">
           <h2>Legend</h2>
-          <p class="placeholder">Map legend</p>
+          <ul class="legend">
+            <li><span class="sw sw-npa"></span>NPA boundary</li>
+            <li><span class="sw sw-hosp"></span>Hospital (open)</li>
+            <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
+          </ul>
+          <p class="legend-note">Hospital circle area increases with licensed bed count. Hospitals with no bed count use the smallest size.</p>
         </section>
       </aside>
 
@@ -50,7 +56,7 @@
         </section>
         <section class="card" id="panel-detail">
           <h2>Selected NPA</h2>
-          <p class="placeholder">Click an area on the map</p>
+          <div id="npa-detail"><p class="placeholder">Click an area on the map</p></div>
         </section>
       </aside>
     </section>
