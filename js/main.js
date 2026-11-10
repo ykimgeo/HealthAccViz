@@ -20,13 +20,20 @@
     return e;
   }
 
+  function byId(id) { return document.getElementById(id); }
+
   function fmt(value, opts) {
     if (value === null || value === undefined) return null;
     return value.toLocaleString("en-US", opts || {});
   }
 
+  function sentence(s) {
+    s = String(s).toLowerCase();
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
   function setStatus(text, isError) {
-    var s = document.getElementById("data-status");
+    var s = byId("data-status");
     s.textContent = text;
     s.classList.toggle("is-error", !!isError);
   }
@@ -38,9 +45,24 @@
     });
   }
 
-  // ----- NPA choropleth -----
-  // Quantile classification, 5 classes, ColorBrewer YlGn (low values = yellow).
+  function loadText(url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error(url + " -> HTTP " + r.status);
+      return r.text();
+    });
+  }
+
+  // =====================================================================
+  // Map layer model
+  // `current` is the layer drawn as the choropleth, or null (boundaries only).
+  // A layer is { kind, colors[5], valueOf(props), classOf(v), title, sub,
+  //              labelFor(i), note, showPop, tooltipLine(props) }.
+  //   kind "indicator": demographic indicator, quantile classes, YlGn (low = yellow)
+  //   kind "access":    accessibility result, fixed classes, YlGn reversed
+  //                     (shortest travel cost = darkest green = best access)
+  // =====================================================================
   var YLGN = ["#ffffcc", "#c2e699", "#78c679", "#31a354", "#006837"];
+  var ACCESS_COLORS = YLGN.slice().reverse();
   var NO_DATA_COLOR = "#bdbdbd";
 
   var INDICATORS = [
@@ -50,10 +72,7 @@
     { key: "household_income_2024", label: "Household income (2024)", decimals: 0, prefix: "$", suffix: "", legendUnit: "US dollars" },
   ];
 
-  var current = null;          // selected indicator; null = boundaries only (default)
-  var breaks = [];             // 5 upper class bounds for `current`
-  var minValue = 0;
-
+  var current = null;
   var npaLayer = null;
   var npaFeatures = [];
   var selected = null;
@@ -76,42 +95,93 @@
     return sorted[f] + (sorted[c] - sorted[f]) * (k - f);
   }
 
-  function computeBreaks(ind) {
+  function makeIndicatorLayer(ind) {
     var vals = npaFeatures
       .map(function (f) { return f.properties[ind.key]; })
       .filter(function (v) { return v !== null && v !== undefined; })
       .sort(function (a, b) { return a - b; });
-    minValue = vals[0];
-    breaks = [20, 40, 60, 80, 100].map(function (p) { return percentile(vals, p); });
+    var min = vals[0];
+    var br = [20, 40, 60, 80, 100].map(function (p) { return percentile(vals, p); });
+    return {
+      kind: "indicator",
+      ind: ind,
+      colors: YLGN,
+      valueOf: function (p) { return p[ind.key]; },
+      // Upper bound inclusive: class i holds values in (br[i-1], br[i]].
+      classOf: function (v) {
+        for (var i = 0; i < br.length; i++) if (v <= br[i]) return i;
+        return br.length - 1;
+      },
+      title: ind.label,
+      sub: "Quantiles, 5 classes · " + ind.legendUnit,
+      labelFor: function (i) { return formatPlain(ind, i === 0 ? min : br[i - 1]) + " – " + formatPlain(ind, br[i]); },
+      note: "Each class includes its upper bound.",
+      showPop: false,
+      tooltipLine: function (p) {
+        var t = formatValue(ind, p[ind.key]);
+        return ind.label + ": " + (t === null ? "No data" : t);
+      },
+    };
   }
 
-  // Upper bound inclusive: class i holds values in (breaks[i-1], breaks[i]].
-  function classOf(v) {
-    for (var i = 0; i < breaks.length; i++) if (v <= breaks[i]) return i;
-    return breaks.length - 1;
+  // ---------- accessibility result layer ----------
+  var METHOD_LABELS = { closest: "Closest facility" };
+  var BASIS_LABELS = { network: "road network", euclid: "Euclidean distance" };
+  var IMPEDANCE_LABELS = { time: "travel time", distance: "travel distance" };
+
+  function fmtCost(v, unit) {
+    return unit === "min" ? fmt(v, { maximumFractionDigits: 0 }) + " min" : v.toFixed(1) + " km";
   }
 
-  // Boundaries-only look, used while no indicator is selected.
+  function makeAccessLayer(settings, results) {
+    var fb = Access.fixedBreaks(settings.impedance);
+    var b = fb.breaks;
+    return {
+      kind: "access",
+      settings: settings,
+      results: results,
+      unit: fb.unit,
+      colors: ACCESS_COLORS,
+      valueOf: function (p) { return results.has(p.id) ? results.get(p.id).cost : null; },
+      classOf: function (v) { return Access.classifyFixed(v, b); },
+      title: METHOD_LABELS[settings.method] + ": " + IMPEDANCE_LABELS[settings.impedance] + " to nearest hospital",
+      sub: "Fixed classes · " + BASIS_LABELS[settings.basis] + " · " + fb.unit,
+      labelFor: function (i) {
+        if (i === 0) return "0 – " + b[0];
+        if (i < b.length) return b[i - 1] + " – " + b[i];
+        return "> " + b[b.length - 1];
+      },
+      note: "Darker green = shorter = better access. Each class includes its upper bound.",
+      showPop: true,
+      tooltipLine: function (p) {
+        var r = results.get(p.id);
+        if (!r) return "No hospital included in this analysis";
+        return fmtCost(r.cost, fb.unit) + " · " + hospitals.get(r.hid).name;
+      },
+    };
+  }
+
+  // ---------- NPA styling ----------
+  // Boundaries-only look, used while no layer is selected.
   var NEUTRAL_STYLE = { color: "#4b6e8c", weight: 1, opacity: 0.9, fillColor: "#4b6e8c", fillOpacity: 0.18 };
+  var HOVER_STYLE = { color: "#222222", weight: 2 };
+  var SELECTED_STYLE = { color: "#000000", weight: 3 };
 
   function baseStyle(feature) {
     if (!current) return NEUTRAL_STYLE;
-    var v = feature.properties[current.key];
+    var v = current.valueOf(feature.properties);
     var missing = v === null || v === undefined;
     return {
       color: "#555555",
       weight: 0.6,
       opacity: 0.9,
-      fillColor: missing ? NO_DATA_COLOR : YLGN[classOf(v)],
+      fillColor: missing ? NO_DATA_COLOR : current.colors[current.classOf(v)],
       fillOpacity: missing ? 0.6 : 0.82,
     };
   }
 
-  var HOVER_STYLE = { color: "#222222", weight: 2 };
-  var SELECTED_STYLE = { color: "#000000", weight: 3 };
-
   function updateLegend() {
-    var box = document.getElementById("choropleth-legend");
+    var box = byId("choropleth-legend");
     box.replaceChildren();
     if (!current) {
       var plain = el("ul", "legend");
@@ -122,57 +192,107 @@
       box.appendChild(plain);
       return;
     }
-    box.appendChild(el("p", "legend-title", current.label));
-    box.appendChild(el("p", "legend-sub", "Quantiles, 5 classes · " + current.legendUnit));
+    box.appendChild(el("p", "legend-title", current.title));
+    box.appendChild(el("p", "legend-sub", current.sub));
 
-    var counts = [0, 0, 0, 0, 0], missing = 0;
+    var counts = [0, 0, 0, 0, 0], pops = [0, 0, 0, 0, 0], missing = 0, missingPop = 0;
     npaFeatures.forEach(function (f) {
-      var v = f.properties[current.key];
-      if (v === null || v === undefined) missing += 1; else counts[classOf(v)] += 1;
+      var v = current.valueOf(f.properties);
+      var pop = f.properties.pop_2020 || 0;
+      if (v === null || v === undefined) { missing += 1; missingPop += pop; }
+      else { var c = current.classOf(v); counts[c] += 1; pops[c] += pop; }
     });
 
-    var ul = el("ul", "legend");
-    for (var i = 0; i < YLGN.length; i++) {
-      var lo = i === 0 ? minValue : breaks[i - 1];
+    function row(color, label, n, pop) {
       var li = el("li");
       var sw = el("span", "sw sw-class");
-      sw.style.background = YLGN[i];
+      sw.style.background = color;
       li.appendChild(sw);
-      li.appendChild(el("span", "legend-range", formatPlain(current, lo) + " – " + formatPlain(current, breaks[i])));
-      li.appendChild(el("span", "legend-count", counts[i] + " NPAs"));
-      ul.appendChild(li);
+      li.appendChild(el("span", "legend-range", label));
+      li.appendChild(el("span", "legend-count", n + " NPAs"));
+      if (current.showPop) li.appendChild(el("span", "legend-pop", fmt(Math.round(pop)) + " people (2020)"));
+      return li;
     }
-    var nd = el("li");
-    var ndSw = el("span", "sw sw-class");
-    ndSw.style.background = NO_DATA_COLOR;
-    nd.appendChild(ndSw);
-    nd.appendChild(el("span", "legend-range", "No data"));
-    nd.appendChild(el("span", "legend-count", missing + " NPAs"));
-    ul.appendChild(nd);
+
+    var ul = el("ul", "legend");
+    for (var i = 0; i < current.colors.length; i++) ul.appendChild(row(current.colors[i], current.labelFor(i), counts[i], pops[i]));
+    ul.appendChild(row(NO_DATA_COLOR, "No data", missing, missingPop));
     box.appendChild(ul);
-    box.appendChild(el("p", "legend-note", "Each class includes its upper bound."));
+    box.appendChild(el("p", "legend-note", current.note));
+  }
+
+  // ---------- selected NPA detail ----------
+  function detailList(rows) {
+    var dl = el("dl", "detail-list");
+    rows.forEach(function (r) {
+      var active = r.active ? " is-active" : "";
+      dl.appendChild(el("dt", active.trim(), r.label));
+      dl.appendChild(r.value === null ? el("dd", "is-missing" + active, "No data") : el("dd", active.trim(), r.value));
+    });
+    return dl;
   }
 
   function showDetail(p) {
-    var box = document.getElementById("npa-detail");
+    var box = byId("npa-detail");
     box.replaceChildren();
     box.appendChild(el("p", "detail-title", p.npa_name));
-    var dl = el("dl", "detail-list");
-    INDICATORS.forEach(function (ind) {
-      var active = ind === current ? " is-active" : "";
-      dl.appendChild(el("dt", active.trim(), ind.label));
-      var text = formatValue(ind, p[ind.key]);
-      dl.appendChild(text === null ? el("dd", "is-missing" + active, "No data") : el("dd", active.trim(), text));
-    });
-    box.appendChild(dl);
+    box.appendChild(detailList(INDICATORS.map(function (ind) {
+      return { label: ind.label, value: formatValue(ind, p[ind.key]), active: !!current && current.kind === "indicator" && current.ind === ind };
+    })));
+
+    if (current && current.kind === "access") {
+      box.appendChild(el("p", "detail-sub", "Nearest hospital"));
+      var r = current.results.get(p.id);
+      if (!r) {
+        box.appendChild(el("p", "placeholder", "No hospital included in this analysis"));
+        return;
+      }
+      var h = hospitals.get(r.hid);
+      box.appendChild(detailList([
+        { label: "Name", value: h.name },
+        { label: "Type", value: sentence(h.type) + " · " + sentence(h.status) },
+        { label: "Beds", value: h.beds === null ? null : fmt(h.beds) },
+        { label: sentence(IMPEDANCE_LABELS[current.settings.impedance]), value: fmtCost(r.cost, current.unit), active: true },
+      ]));
+      box.appendChild(el("p", "legend-note", "Line on the map is straight, not the route."));
+    }
+  }
+
+  function tooltipFor(layer) {
+    var p = layer.feature.properties;
+    var box = el("div");
+    box.appendChild(el("div", "tip-title", p.npa_name));
+    if (current) box.appendChild(el("div", "tip-sub", current.tooltipLine(p)));
+    return box;
+  }
+
+  // ---------- link to the nearest hospital ----------
+  map.createPane("links");
+  map.getPane("links").style.zIndex = 445; // above polygons, below hospital markers
+  var linkGroup = L.layerGroup().addTo(map);
+
+  function updateLink() {
+    linkGroup.clearLayers();
+    var drawn = false;
+    if (selected && current && current.kind === "access") {
+      var r = current.results.get(selected.feature.properties.id);
+      var marker = r && hospMarkers.get(r.hid);
+      if (marker) {
+        var to = marker.getLatLng();
+        L.polyline([selected.getCenter(), to], { pane: "links", color: "#0d2f4a", weight: 2, dashArray: "5 4", interactive: false }).addTo(linkGroup);
+        L.circleMarker(to, { pane: "hospitals", radius: hospitalRadius(hospitals.get(r.hid).beds) + 5, color: "#0d2f4a", weight: 3, fill: false, interactive: false }).addTo(linkGroup);
+        drawn = true;
+      }
+    }
+    byId("legend-link").hidden = !drawn;
   }
 
   function clearSelection() {
     if (!selected) return;
     npaLayer.resetStyle(selected);
     selected = null;
-    var box = document.getElementById("npa-detail");
-    box.replaceChildren(el("p", "placeholder", "Click an area on the map"));
+    byId("npa-detail").replaceChildren(el("p", "placeholder", "Click an area on the map"));
+    updateLink();
   }
 
   function selectNPA(layer) {
@@ -181,45 +301,48 @@
     layer.setStyle(SELECTED_STYLE);
     layer.bringToFront();
     showDetail(layer.feature.properties);
+    updateLink();
   }
 
-  function tooltipFor(layer) {
-    var p = layer.feature.properties;
-    var box = el("div");
-    box.appendChild(el("div", "tip-title", p.npa_name));
-    if (current) {
-      var text = formatValue(current, p[current.key]);
-      box.appendChild(el("div", "tip-sub", current.label + ": " + (text === null ? "No data" : text)));
-    }
-    return box;
-  }
-
-  function setIndicator(ind) {
-    current = ind;
-    if (current) computeBreaks(current);
+  function setLayer(layer) {
+    current = layer;
     npaLayer.setStyle(baseStyle);
     if (selected) {
       selected.setStyle(SELECTED_STYLE);
       showDetail(selected.feature.properties);
     }
     updateLegend();
+    updateLink();
   }
 
+  // ---------- choropleth radio list ----------
+  var accessRadio = null;
+  var accessRadioText = null;
+
   function buildIndicatorControl() {
-    var box = document.getElementById("indicator-options");
-    // null = no choropleth; listed first and checked by default
-    [null].concat(INDICATORS).forEach(function (ind) {
+    var box = byId("indicator-options");
+    function option(value, text, onChoose, checked, disabled) {
       var label = el("label", "indicator-option");
       var input = el("input");
       input.type = "radio";
       input.name = "indicator";
-      input.value = ind ? ind.key : "none";
-      input.checked = ind === current;
-      input.addEventListener("change", function () { setIndicator(ind); });
+      input.value = value;
+      input.checked = checked;
+      input.disabled = !!disabled;
+      input.addEventListener("change", onChoose);
+      var span = el("span", null, text);
       label.appendChild(input);
-      label.appendChild(el("span", null, ind ? ind.label : "None (boundaries only)"));
+      label.appendChild(span);
       box.appendChild(label);
+      return { input: input, span: span };
+    }
+    option("none", "None (boundaries only)", function () { setLayer(null); }, true);
+    INDICATORS.forEach(function (ind) {
+      option(ind.key, ind.label, function () { setLayer(makeIndicatorLayer(ind)); }, false);
     });
+    var a = option("access", "Accessibility result (press Apply)", function () { setLayer(accessLayer); }, false, true);
+    accessRadio = a.input;
+    accessRadioText = a.span;
   }
 
   function addNPA(geojson) {
@@ -247,13 +370,38 @@
     if (e.key === "Escape") clearSelection();
   });
 
-  // ----- hospital layer -----
+  // =====================================================================
+  // Hospitals
+  // =====================================================================
   map.createPane("hospitals");
   map.getPane("hospitals").style.zIndex = 450; // above polygons, below tooltips/popups
+
+  var hospitals = new Map();   // hid -> properties
+  var hospMarkers = new Map(); // hid -> circle marker
+  var supplyIncluded = null;   // Set of hids counted in the applied analysis; null before the first Apply
 
   function hospitalRadius(beds) {
     if (beds === null || beds === undefined) return 4;
     return Math.min(4 + Math.sqrt(beds) * 0.35, 18);
+  }
+
+  function hospitalStyle(p) {
+    var open = p.status === "OPEN";
+    if (supplyIncluded && !supplyIncluded.has(p.hid)) {
+      return { color: "#9e9e9e", weight: 1.5, dashArray: null, fillColor: "#bdbdbd", fillOpacity: 0.45, opacity: 0.8 };
+    }
+    return {
+      color: open ? "#8a2b21" : "#777777",
+      weight: 1.5,
+      dashArray: open ? null : "3 3",
+      fillColor: open ? "#c0392b" : "#ffffff",
+      fillOpacity: open ? 0.8 : 0.9,
+      opacity: 1,
+    };
+  }
+
+  function refreshHospitalStyles() {
+    hospMarkers.forEach(function (m) { m.setStyle(hospitalStyle(m.feature.properties)); });
   }
 
   function hospitalTooltip(p) {
@@ -262,6 +410,7 @@
     box.appendChild(el("div", "tip-sub", p.type + " · " + p.status));
     box.appendChild(el("div", "tip-sub", p.beds === null ? "Beds: no data" : "Beds: " + fmt(p.beds)));
     box.appendChild(el("div", "tip-sub", p.county + ", " + p.state));
+    if (supplyIncluded) box.appendChild(el("div", "tip-sub", "Included in analysis: " + (supplyIncluded.has(p.hid) ? "yes" : "no")));
     return box;
   }
 
@@ -269,28 +418,139 @@
     return L.geoJSON(geojson, {
       pointToLayer: function (feature, latlng) {
         var p = feature.properties;
-        var open = p.status === "OPEN";
-        return L.circleMarker(latlng, {
+        hospitals.set(p.hid, p);
+        var m = L.circleMarker(latlng, Object.assign({
           pane: "hospitals",
           bubblingMouseEvents: false, // clicking a hospital leaves the NPA selection unchanged
           radius: hospitalRadius(p.beds),
-          color: open ? "#8a2b21" : "#777777",
-          weight: 1.5,
-          dashArray: open ? null : "3 3",
-          fillColor: open ? "#c0392b" : "#ffffff",
-          fillOpacity: open ? 0.8 : 0.9,
-        });
+        }, hospitalStyle(p)));
+        hospMarkers.set(p.hid, m);
+        return m;
       },
       onEachFeature: function (feature, layer) {
-        layer.bindTooltip(hospitalTooltip(feature.properties), { direction: "top" });
+        layer.bindTooltip(function () { return hospitalTooltip(feature.properties); }, { direction: "top" });
       },
     }).addTo(map);
   }
 
-  // ----- load data -----
+  // =====================================================================
+  // Accessibility panel: choose settings, then press Apply
+  // =====================================================================
+  var odByNpa = null;
+  var accessLayer = null;
+  var appliedKey = null;
+
+  var selMethod = byId("sel-method");
+  var selNetwork = byId("sel-network");
+  var selImpedance = byId("sel-impedance");
+  var chkClosed = byId("chk-closed");
+  var btnApply = byId("btn-apply");
+  var hint = byId("access-hint");
+
+  function checkedTypes() {
+    return Array.prototype.slice.call(document.querySelectorAll("#type-filters input:checked")).map(function (i) { return i.value; });
+  }
+
+  function readSettings() {
+    return {
+      method: selMethod.value,
+      basis: selNetwork.value,
+      impedance: selImpedance.value,
+      includeClosed: chkClosed.checked,
+      types: checkedTypes(),
+    };
+  }
+
+  function settingsKey(s) {
+    return JSON.stringify([s.method, s.basis, s.impedance, s.includeClosed, s.types.slice().sort()]);
+  }
+
+  function describe(s) {
+    return METHOD_LABELS[s.method] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
+  }
+
+  function updateHint() {
+    var s = readSettings();
+    var msg = "";
+    var enabled = true;
+    if (!odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    else if (s.types.length === 0) { msg = "Select at least one hospital type."; enabled = false; }
+    else if (appliedKey === null) msg = "Choose settings, then press Apply.";
+    else if (settingsKey(s) !== appliedKey) msg = "Settings changed. Press Apply to update the map.";
+    else msg = "Showing: " + describe(s);
+    var n = 0;
+    hospitals.forEach(function (h) { if ((h.status === "OPEN" || s.includeClosed) && s.types.indexOf(h.type) >= 0) n += 1; });
+    byId("hosp-count").textContent = "(" + n + " of " + hospitals.size + ")";
+    btnApply.disabled = !enabled;
+    hint.textContent = msg;
+    hint.classList.toggle("is-pending", enabled && appliedKey !== null && settingsKey(s) !== appliedKey);
+  }
+
+  // Travel time exists only for the road network, so Euclidean forces travel distance.
+  function syncImpedance() {
+    var timeOption = selImpedance.querySelector('option[value="time"]');
+    var euclid = selNetwork.value === "euclid";
+    timeOption.disabled = euclid;
+    timeOption.textContent = euclid ? "Travel time (road network only)" : "Travel time";
+    if (euclid && selImpedance.value === "time") selImpedance.value = "distance";
+  }
+
+  function apply() {
+    var s = readSettings();
+    var included = new Set();
+    hospitals.forEach(function (p, hid) {
+      if ((p.status === "OPEN" || s.includeClosed) && s.types.indexOf(p.type) >= 0) included.add(hid);
+    });
+    var results = Access.closestFacility(odByNpa, included, s.basis, s.impedance);
+    accessLayer = makeAccessLayer(s, results);
+
+    supplyIncluded = included;
+    refreshHospitalStyles();
+    byId("legend-hosp-excluded").hidden = false;
+
+    appliedKey = settingsKey(s);
+    accessRadio.disabled = false;
+    accessRadio.checked = true;
+    accessRadioText.textContent = "Accessibility: " + describe(s);
+    setLayer(accessLayer);
+    updateHint();
+  }
+
+  function initAccessPanel(hospitalFeatures, od) {
+    odByNpa = od;
+    var counts = {};
+    hospitalFeatures.forEach(function (f) { counts[f.properties.type] = (counts[f.properties.type] || 0) + 1; });
+    var box = byId("type-filters");
+    Object.keys(counts).sort().forEach(function (t) {
+      var label = el("label", "check");
+      var input = el("input");
+      input.type = "checkbox";
+      input.value = t;
+      input.checked = true; // specialty hospitals are included by default
+      input.addEventListener("change", updateHint);
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(" " + sentence(t) + " (" + counts[t] + ")"));
+      box.appendChild(label);
+    });
+    [selMethod, selImpedance, chkClosed].forEach(function (c) { c.addEventListener("change", updateHint); });
+    selNetwork.addEventListener("change", function () { syncImpedance(); updateHint(); });
+    btnApply.addEventListener("click", apply);
+    syncImpedance();
+    updateHint();
+  }
+
+  // =====================================================================
+  // Load data
+  // =====================================================================
+  var odError = null;
+  var odPromise = loadText("data/input/od_matrix.csv")
+    .then(Access.parseOD)
+    .catch(function (err) { console.error(err); odError = err.message; return null; });
+
   Promise.all([
     loadJSON("data/input/npa_input.geojson"),
     loadJSON("data/input/hospitals_input.geojson"),
+    odPromise,
   ])
     .then(function (res) {
       addNPA(res[0]);
@@ -298,7 +558,9 @@
       // Fit to NPAs and all hospitals, including those outside Mecklenburg County.
       map.fitBounds(npaLayer.getBounds().extend(hosp.getBounds()), { padding: [20, 20] });
       L.control.layers(null, { "NPA boundaries": npaLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
-      setStatus(res[0].features.length + " NPAs, " + res[1].features.length + " hospitals loaded.");
+      initAccessPanel(res[1].features, res[2]);
+      if (odError) setStatus("OD matrix failed to load: " + odError, true);
+      else setStatus(res[0].features.length + " NPAs, " + res[1].features.length + " hospitals, OD matrix loaded.");
     })
     .catch(function (err) {
       console.error(err);
@@ -313,8 +575,8 @@
   // ----- tabs -----
   var tabs = document.querySelectorAll(".tab");
   var views = {
-    dashboard: document.getElementById("view-dashboard"),
-    methods: document.getElementById("view-methods"),
+    dashboard: byId("view-dashboard"),
+    methods: byId("view-methods"),
   };
 
   function showView(name) {

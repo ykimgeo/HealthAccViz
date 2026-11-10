@@ -25,13 +25,38 @@
     <!-- Dashboard view: 3 columns -->
     <section id="view-dashboard" class="view dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
       <aside class="col col-left" aria-label="Controls">
-        <section class="card" id="panel-controls">
-          <h2>Controls</h2>
-          <fieldset class="indicator-fieldset">
-            <legend>Choropleth indicator</legend>
-            <div id="indicator-options"></div>
-          </fieldset>
-          <p id="data-status" class="status" role="status">Loading data…</p>
+        <section class="card" id="panel-access">
+          <h2>Accessibility measure</h2>
+          <label class="field">
+            <span>Method</span>
+            <select id="sel-method">
+              <option value="closest" selected>Closest facility</option>
+              <option value="container" disabled>Container (coming soon)</option>
+              <option value="gravity" disabled>Gravity (coming soon)</option>
+              <option value="2sfca" disabled>2SFCA (coming soon)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Distance basis</span>
+            <select id="sel-network">
+              <option value="network" selected>Road network</option>
+              <option value="euclid">Euclidean</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Travel impedance</span>
+            <select id="sel-impedance">
+              <option value="time" selected>Travel time</option>
+              <option value="distance">Travel distance</option>
+            </select>
+          </label>
+          <details class="hosp-filter">
+            <summary>Hospitals included <span id="hosp-count" class="muted"></span></summary>
+            <label class="check"><input type="checkbox" id="chk-closed"> Closed hospitals</label>
+            <div id="type-filters"></div>
+          </details>
+          <button type="button" id="btn-apply" class="btn" disabled>Apply</button>
+          <p id="access-hint" class="status" role="status"></p>
         </section>
         <section class="card" id="panel-legend">
           <h2>Legend</h2>
@@ -39,8 +64,18 @@
           <ul class="legend legend-symbols">
             <li><span class="sw sw-hosp"></span>Hospital (open)</li>
             <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
+            <li id="legend-hosp-excluded" hidden><span class="sw sw-hosp-excluded"></span>Hospital (not included)</li>
+            <li id="legend-link" hidden><span class="sw sw-link"></span>Nearest hospital (straight line)</li>
           </ul>
           <p class="legend-note">Hospital circle area increases with licensed bed count. Hospitals with no bed count use the smallest size.</p>
+        </section>
+        <section class="card" id="panel-controls">
+          <h2>Controls</h2>
+          <fieldset class="indicator-fieldset">
+            <legend>Choropleth indicator</legend>
+            <div id="indicator-options"></div>
+          </fieldset>
+          <p id="data-status" class="status" role="status">Loading data…</p>
         </section>
       </aside>
 
@@ -84,6 +119,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="js/access.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>
