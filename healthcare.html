@@ -88,7 +88,7 @@
             </div>
             <svg id="decay-preview" class="decay-preview" viewBox="0 0 240 100" role="img" aria-label="Distance decay curve preview"></svg>
           </div>
-          <p id="method-note" class="field-note" hidden>Container counts the hospitals inside each NPA boundary, so distance basis and travel impedance are not used.</p>
+          <p id="method-note" class="field-note" hidden>Container counts the hospitals inside each Mecklenburg County tract boundary, so distance basis and travel impedance are not used.</p>
           <details class="hosp-filter">
             <summary>Hospitals included <span id="hosp-count" class="muted"></span></summary>
             <label class="check"><input type="checkbox" id="chk-closed"> Closed hospitals</label>
@@ -120,7 +120,7 @@
               <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
               <li id="legend-hosp-excluded" hidden><span class="sw sw-hosp-excluded"></span>Hospital (not included)</li>
               <li id="legend-link" hidden><span class="sw sw-link"></span>Nearest hospital (straight line)</li>
-            <li id="legend-ring" hidden><span class="sw sw-ring"></span><span id="legend-ring-text">Hospital linked to the selected NPA</span></li>
+            <li id="legend-ring" hidden><span class="sw sw-ring"></span><span id="legend-ring-text">Hospital linked to the selected tract</span></li>
               <li id="legend-served" hidden><span class="sw sw-served"></span><span id="legend-served-text"></span></li>
             </ul>
             <p class="legend-note">Circle area increases with bed count; no bed count = smallest size.</p>
@@ -139,7 +139,7 @@
         </section>
         <section class="card" id="panel-detail">
           <h2>Selection</h2>
-          <div id="npa-detail"><p class="placeholder">Click an area or a hospital on the map</p></div>
+          <div id="selection-detail"><p class="placeholder">Click an area or a hospital on the map</p></div>
         </section>
       </aside>
     </section>
@@ -158,7 +158,7 @@
   </main>
 
   <footer class="app-footer">
-    <span>Data: Charlotte Quality of Life Explorer / Carolinas Regional Explorer, UNC Charlotte Urban Institute</span>
+    <span>Data: Carolinas Regional Explorer, UNC Charlotte Urban Institute (ACS 2024) · U.S. Census Bureau TIGER/Line 2024 · HIFLD hospitals · Routing: © OpenStreetMap contributors</span>
     <span>GIS Day 2026 · AI Interactive GeoVisualization Competition</span>
   </footer>
 

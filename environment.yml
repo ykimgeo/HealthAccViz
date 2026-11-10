@@ -16,4 +16,6 @@ dependencies:
   - geopandas
   - pandas
   - numpy
+  - pyarrow       # reads the TIGER parquet files in tools/prepare_input.py
+  - shapely>=2.1  # coverage_simplify for the map polygons
   - osmium-tool   # CLI used to clip and merge the Geofabrik extracts

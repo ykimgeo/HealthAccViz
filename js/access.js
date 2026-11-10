@@ -4,17 +4,17 @@
 (function (root) {
   "use strict";
 
-  // OD matrix columns: npa_id, hid, euclid_km, network_km, network_min
-  // ids stay strings so the leading zeros of hid survive.
+  // OD matrix columns: tract_id, hid, euclid_km, network_km, network_min
+  // ids stay strings so the leading zeros of hid and of the tract GEOID survive.
   function parseOD(text) {
     var lines = text.split(/\r?\n/);
     var head = lines[0].split(",");
     var ix = {};
     head.forEach(function (h, i) { ix[h] = i; });
-    ["npa_id", "hid", "euclid_km", "network_km", "network_min"].forEach(function (c) {
+    ["tract_id", "hid", "euclid_km", "network_km", "network_min"].forEach(function (c) {
       if (!(c in ix)) throw new Error("OD matrix is missing column: " + c);
     });
-    var byNpa = new Map();
+    var byTract = new Map();
     for (var i = 1; i < lines.length; i++) {
       if (!lines[i]) continue;
       var f = lines[i].split(",");
@@ -24,11 +24,11 @@
         nk: parseFloat(f[ix.network_km]),
         nm: parseFloat(f[ix.network_min]),
       };
-      var id = f[ix.npa_id];
-      if (!byNpa.has(id)) byNpa.set(id, []);
-      byNpa.get(id).push(row);
+      var id = f[ix.tract_id];
+      if (!byTract.has(id)) byTract.set(id, []);
+      byTract.get(id).push(row);
     }
-    return byNpa;
+    return byTract;
   }
 
   // Which OD column a (distance basis, impedance) pair uses.
@@ -53,20 +53,20 @@
     return breaks.length;
   }
 
-  // Closest facility: for every NPA, the included hospital with the lowest cost.
+  // Closest facility: for every tract, the included hospital with the lowest cost.
   // Ties are broken by road km, then Euclidean km, then hid, so results are deterministic.
-  // Returns Map npa_id -> { hid, cost, e, nk, nm }. NPAs with no included hospital get no entry.
-  function closestFacility(byNpa, includedHids, basis, impedance) {
+  // Returns Map tract_id -> { hid, cost, e, nk, nm }. tracts with no included hospital get no entry.
+  function closestFacility(byTract, includedHids, basis, impedance) {
     var key = costKey(basis, impedance);
     var out = new Map();
-    byNpa.forEach(function (rows, npaId) {
+    byTract.forEach(function (rows, tractId) {
       var best = null;
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         if (!includedHids.has(r.hid)) continue;
         if (best === null || better(r, best, key)) best = r;
       }
-      if (best) out.set(npaId, { hid: best.hid, cost: best[key], e: best.e, nk: best.nk, nm: best.nm });
+      if (best) out.set(tractId, { hid: best.hid, cost: best[key], e: best.e, nk: best.nk, nm: best.nm });
     });
     return out;
   }
@@ -79,8 +79,8 @@
   }
 
   // ---------------------------------------------------------------------
-  // Container: count the hospitals (and beds) that lie inside each NPA.
-  // No distance is involved. A hospital outside every NPA is not counted anywhere.
+  // Container: count the hospitals (and beds) that lie inside each tract.
+  // No distance is involved. A hospital outside every tract is not counted anywhere.
   // ---------------------------------------------------------------------
   function inRing(x, y, ring) {
     var inside = false;
@@ -118,28 +118,28 @@
     return b;
   }
 
-  // npaFeatures: GeoJSON features with properties.id; hospitalFeatures: point features with
+  // tractFeatures: GeoJSON features with properties.id; hospitalFeatures: point features with
   // properties.hid and properties.beds (null = unknown). includedHids: Set of hids to count.
-  // Returns Map npa_id -> { n, beds, bedsMissing, hids }. Every NPA has an entry (n = 0 if empty).
+  // Returns Map tract_id -> { n, beds, bedsMissing, hids }. Every tract has an entry (n = 0 if empty).
   // beds sums only hospitals with a bed count; bedsMissing says how many were left out of that sum.
-  function container(npaFeatures, hospitalFeatures, includedHids) {
-    var boxes = npaFeatures.map(function (f) { return bboxOf(f.geometry); });
+  function container(tractFeatures, hospitalFeatures, includedHids) {
+    var boxes = tractFeatures.map(function (f) { return bboxOf(f.geometry); });
     var out = new Map();
-    npaFeatures.forEach(function (f) { out.set(f.properties.id, { n: 0, beds: 0, bedsMissing: 0, hids: [] }); });
+    tractFeatures.forEach(function (f) { out.set(f.properties.id, { n: 0, beds: 0, bedsMissing: 0, hids: [] }); });
     hospitalFeatures.forEach(function (h) {
       var hid = h.properties.hid;
       if (!includedHids.has(hid)) return;
       var x = h.geometry.coordinates[0], y = h.geometry.coordinates[1];
-      for (var i = 0; i < npaFeatures.length; i++) {
+      for (var i = 0; i < tractFeatures.length; i++) {
         var b = boxes[i];
         if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
-        if (inGeometry(x, y, npaFeatures[i].geometry)) {
-          var r = out.get(npaFeatures[i].properties.id);
+        if (inGeometry(x, y, tractFeatures[i].geometry)) {
+          var r = out.get(tractFeatures[i].properties.id);
           r.n += 1;
           r.hids.push(hid);
           if (h.properties.beds === null || h.properties.beds === undefined) r.bedsMissing += 1;
           else r.beds += h.properties.beds;
-          return; // a hospital belongs to one NPA only
+          return; // a hospital belongs to one tract only
         }
       }
     });
@@ -147,7 +147,7 @@
   }
 
   // Fixed classes for the container measures. Upper bounds of every class but the last (open-ended).
-  // Hospital counts per NPA are 0..3 in this data, so counts use four classes; beds use five.
+  // Hospital counts per tract are 0..3 in this data, so counts use four classes; beds use five.
   function containerClasses(measure) {
     if (measure === "count") return { breaks: [0, 1, 2], labels: ["0", "1", "2", "3+"], unit: "hospitals" };
     if (measure === "beds") return { breaks: [0, 100, 300, 600], labels: ["0", "1 – 100", "101 – 300", "301 – 600", "> 600"], unit: "beds" };
@@ -175,15 +175,15 @@
   }
 
   // supply: Map hid -> beds (only hospitals that count, all with a bed count).
-  // Returns Map npa_id -> { score, n, top } where score = sum S_j f(d_ij) (weighted beds), n = hospitals within d0,
+  // Returns Map tract_id -> { score, n, top } where score = sum S_j f(d_ij) (weighted beds), n = hospitals within d0,
   // top = the three largest contributions [{ hid, cost, f, w }].
-  function gravity(byNpa, supply, basis, impedance, opts) {
+  function gravity(byTract, supply, basis, impedance, opts) {
     var key = costKey(basis, impedance);
     var total = 0;
     supply.forEach(function (beds) { total += beds; });
     if (!(total > 0)) throw new Error("No included hospital has a bed count");
     var out = new Map();
-    byNpa.forEach(function (rows, npaId) {
+    byTract.forEach(function (rows, tractId) {
       var w = 0, n = 0, contrib = [];
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
@@ -198,7 +198,7 @@
         }
       }
       contrib.sort(function (a, b) { return b.w - a.w || (a.hid < b.hid ? -1 : 1); });
-      out.set(npaId, { score: w, n: n, top: contrib.slice(0, 3) });
+      out.set(tractId, { score: w, n: n, top: contrib.slice(0, 3) });
     });
     return out;
   }
@@ -206,19 +206,19 @@
   // ---------------------------------------------------------------------
   // 2SFCA (two-step floating catchment area), with the distance decay f(d) of the Gravity method.
   //   step 1:  R_j = S_j / sum_k P_k f(d_kj)       beds per person around hospital j
-  //   step 2:  A_i = sum_j R_j f(d_ij)             beds per person for NPA i
+  //   step 2:  A_i = sum_j R_j f(d_ij)             beds per person for tract i
   // With the binary decay this is the original 2SFCA; a continuous f gives the enhanced version.
   // The score is A_i * 1000 (beds per 1,000 people).
-  // demand: Map npa_id -> population. supply: Map hid -> beds.
+  // demand: Map tract_id -> population. supply: Map hid -> beds.
   // A hospital with no demand inside its catchment has no defined R_j and contributes nothing.
-  // Returns { byNpa: Map npa_id -> { score, n, top }, ratio: Map hid -> R_j * 1000 }
+  // Returns { byTract: Map tract_id -> { score, n, top }, ratio: Map hid -> R_j * 1000 }
   // where top = the three largest contributions [{ hid, cost, f, w, r }], w = R_j f * 1000, r = R_j * 1000.
   // ---------------------------------------------------------------------
-  function sfca(byNpa, supply, demand, basis, impedance, opts) {
+  function sfca(byTract, supply, demand, basis, impedance, opts) {
     var key = costKey(basis, impedance);
     var pop = new Map(); // hid -> sum_k P_k f(d_kj)
-    byNpa.forEach(function (rows, npaId) {
-      var p = demand.get(npaId) || 0;
+    byTract.forEach(function (rows, tractId) {
+      var p = demand.get(tractId) || 0;
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         if (!supply.has(r.hid)) continue;
@@ -232,7 +232,7 @@
       if (d > 0) ratio.set(hid, beds / d);
     });
     var out = new Map();
-    byNpa.forEach(function (rows, npaId) {
+    byTract.forEach(function (rows, tractId) {
       var a = 0, n = 0, contrib = [];
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
@@ -247,25 +247,25 @@
         }
       }
       contrib.sort(function (x, y) { return y.w - x.w || (x.hid < y.hid ? -1 : 1); });
-      out.set(npaId, { score: a * 1000, n: n, top: contrib.slice(0, 3) });
+      out.set(tractId, { score: a * 1000, n: n, top: contrib.slice(0, 3) });
     });
     var ratio1000 = new Map();
     ratio.forEach(function (v, hid) { ratio1000.set(hid, v * 1000); });
-    return { byNpa: out, ratio: ratio1000 };
+    return { byTract: out, ratio: ratio1000 };
   }
 
   // ---------------------------------------------------------------------
-  // Hospital catchment for the distance-decay methods: the NPAs whose weight f(d) for hospital hid is > 0.
-  // Returns [{ npaId, cost, f }].
+  // Hospital catchment for the distance-decay methods: the tracts whose weight f(d) for hospital hid is > 0.
+  // Returns [{ tractId, cost, f }].
   // ---------------------------------------------------------------------
-  function catchment(byNpa, hid, basis, impedance, opts) {
+  function catchment(byTract, hid, basis, impedance, opts) {
     var key = costKey(basis, impedance);
     var out = [];
-    byNpa.forEach(function (rows, npaId) {
+    byTract.forEach(function (rows, tractId) {
       for (var i = 0; i < rows.length; i++) {
         if (rows[i].hid !== hid) continue;
         var f = decay(opts.kind, rows[i][key], opts.d0, opts.beta);
-        if (f > 0) out.push({ npaId: npaId, cost: rows[i][key], f: f });
+        if (f > 0) out.push({ tractId: tractId, cost: rows[i][key], f: f });
         return;
       }
     });

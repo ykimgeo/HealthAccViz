@@ -2,7 +2,9 @@
   "use strict";
 
   // ----- map -----
-  var map = L.map("map").setView([35.227, -80.843], 10);
+  // zoomSnap 0.25: the initial fit to Mecklenburg County can use a fractional zoom, so the county fills the map
+  // instead of leaving up to half of it empty (integer zoom levels only).
+  var map = L.map("map", { zoomSnap: 0.25 }).setView([35.227, -80.843], 10);
 
   // Esri World Light Gray Canvas: a muted, label-free basemap that suits a choropleth.
   // Note the ArcGIS tile order is {z}/{y}/{x}, not {z}/{x}/{y}.
@@ -66,19 +68,20 @@
   var NO_DATA_COLOR = "#bdbdbd";
 
   var INDICATORS = [
-    { key: "pop_2020", label: "Population (2020)", decimals: 0, prefix: "", suffix: "", legendUnit: "people" },
-    { key: "pop_density_2020", label: "Population density (2020)", decimals: 1, prefix: "", suffix: " people/acre", legendUnit: "people per acre" },
-    { key: "older_adult_pct_2024", label: "Aged 65+ (2024)", decimals: 1, prefix: "", suffix: "%", legendUnit: "%" },
-    { key: "household_income_2024", label: "Household income (2024)", decimals: 0, prefix: "$", suffix: "", legendUnit: "US dollars" },
+    { key: "pop", label: "Population (2024)", decimals: 0, prefix: "", suffix: "", legendUnit: "people" },
+    { key: "pop_density", label: "Population density (2024)", decimals: 0, prefix: "", suffix: " people/sq mi", legendUnit: "people per square mile (land area)" },
+    { key: "older_adult_pct", label: "Aged 65+ (2024)", decimals: 1, prefix: "", suffix: "%", legendUnit: "%" },
+    { key: "household_income", label: "Household income (2024)", decimals: 0, prefix: "$", suffix: "", legendUnit: "US dollars" },
   ];
 
   var current = null;
-  var npaLayer = null;
-  var npaFeatures = [];
+  var tractLayer = null;
+  var tractFeatures = [];
   var selected = null;
-  var selectedHosp = null;   // hid of the selected hospital (never together with a selected NPA)
-  var highlightIds = null;   // Set of NPA ids served by the selected hospital
-  var npaProps = new Map();  // NPA id -> properties
+  var selectedHosp = null;   // hid of the selected hospital (never together with a selected tract)
+  var highlightIds = null;   // Set of tract ids served by the selected hospital
+  var tractProps = new Map();  // tract id -> properties of the Mecklenburg County tracts drawn on the map
+  var demandPop = new Map();   // tract id -> 2024 population, all tracts of the 14 counties (demand for 2SFCA)
 
   function formatValue(ind, v) {
     if (v === null || v === undefined) return null;
@@ -99,7 +102,7 @@
   }
 
   function makeIndicatorLayer(ind) {
-    var vals = npaFeatures
+    var vals = tractFeatures
       .map(function (f) { return f.properties[ind.key]; })
       .filter(function (v) { return v !== null && v !== undefined; })
       .sort(function (a, b) { return a - b; });
@@ -139,28 +142,28 @@
   }
 
   // ---------- shared helpers for the selected-hospital view and the Summary card ----------
-  function popOf(id) { var p = npaProps.get(id); return p ? p.pop_2020 || 0 : 0; }
+  function popOf(id) { var p = tractProps.get(id); return p ? p.pop || 0 : 0; }
   function pct(part, whole) { return whole > 0 ? (100 * part / whole).toFixed(1) + "%" : "–"; }
   function people(n) { return fmt(Math.round(n)); }
   function share(part, whole) { return pct(part, whole) + " · " + people(part); }
 
-  // Values and populations of the NPAs that have a value in the active layer.
+  // Values and populations of the tracts that have a value in the active layer.
   function popItems(valueOf) {
     var items = [], missing = 0, missingPop = 0;
-    npaFeatures.forEach(function (f) {
-      var v = valueOf(f.properties), w = f.properties.pop_2020 || 0;
+    tractFeatures.forEach(function (f) {
+      var v = valueOf(f.properties), w = f.properties.pop || 0;
       if (v === null || v === undefined) { missing += 1; missingPop += w; } else items.push({ v: v, w: w });
     });
     return { items: items, stats: Access.weightedStats(items), missing: missing, missingPop: missingPop };
   }
 
   function summaryHead(pi) {
-    var rows = [{ label: "People counted (2020)", value: people(pi.stats.total) }, { label: "NPAs counted", value: String(pi.items.length) }];
-    if (pi.missing) rows.push({ label: "NPAs without a value", value: pi.missing + " · " + people(pi.missingPop) + " people" });
+    var rows = [{ label: "People counted (2024)", value: people(pi.stats.total) }, { label: "Tracts counted", value: String(pi.items.length) }];
+    if (pi.missing) rows.push({ label: "Tracts without a value", value: pi.missing + " · " + people(pi.missingPop) + " people" });
     return rows;
   }
 
-  // Closest facility: cost (min or km) from the NPA to its nearest included hospital.
+  // Closest facility: cost (min or km) from the tract to its nearest included hospital.
   function makeClosestLayer(settings, results) {
     var fb = Access.fixedBreaks(settings.impedance);
     var b = fb.breaks;
@@ -179,7 +182,7 @@
         if (i < b.length) return b[i - 1] + " – " + b[i];
         return "> " + b[b.length - 1];
       },
-      note: "Darker green = shorter = better access. Class upper bounds are inclusive. People = 2020 population.",
+      note: "Darker green = shorter = better access. Class upper bounds are inclusive. People = 2024 population (ACS).",
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -194,23 +197,23 @@
         rows.push({ label: "Median", value: c(st.median) });
         b.forEach(function (x) { rows.push({ label: "Within " + x + " " + fb.unit, value: share(st.within(x), st.total) }); });
         rows.push({ label: "Farther than " + b[b.length - 1] + " " + fb.unit, value: share(st.total - st.within(b[b.length - 1]), st.total) });
-        return { rows: rows, note: "Each NPA counts as many times as it has residents (population-weighted). Percentages are shares of the people counted. The median is the value at which half of those people are reached." };
+        return { rows: rows, note: "Each tract counts as many times as it has residents (population-weighted). Percentages are shares of the people counted. The median is the value at which half of those people are reached." };
       },
-      serviceLegend: "NPA whose nearest hospital is the selected one",
+      serviceLegend: "Tract whose nearest hospital is the selected one",
       serviceOf: function (hid) {
         var ids = new Set(), pop = 0, w = 0, worst = 0;
         results.forEach(function (r, id) {
-          if (r.hid !== hid) return;
+          if (r.hid !== hid || !tractProps.has(id)) return; // tracts of the other counties are not drawn
           ids.add(id); pop += popOf(id); w += popOf(id) * r.cost; if (r.cost > worst) worst = r.cost;
         });
-        var rows = [{ label: "NPAs served", value: String(ids.size), active: true }, { label: "People served (2020)", value: people(pop) }];
+        var rows = [{ label: "Tracts served", value: String(ids.size), active: true }, { label: "People served (2024)", value: people(pop) }];
         if (ids.size) {
           rows.push({ label: "Mean " + (fb.unit === "min" ? "travel time" : "travel distance"), value: (w / pop).toFixed(1) + " " + fb.unit });
-          rows.push({ label: "Farthest NPA", value: worst.toFixed(1) + " " + fb.unit });
+          rows.push({ label: "Farthest tract", value: worst.toFixed(1) + " " + fb.unit });
         }
-        return { ids: ids, rows: rows, note: ids.size ? "Served = this hospital is the closest included hospital. Mean is weighted by population." : "No NPA has this hospital as its closest one." };
+        return { ids: ids, rows: rows, note: ids.size ? "Served = this hospital is the closest included hospital. Only Mecklenburg County tracts are counted. Mean is weighted by population." : "No Mecklenburg County tract has this hospital as its closest one." };
       },
-      // what to draw on the map for the selected NPA: a line to the nearest hospital and a ring on it
+      // what to draw on the map for the selected tract: a line to the nearest hospital and a ring on it
       overlayFor: function (id) {
         var r = results.get(id);
         return r ? { line: r.hid, rings: [r.hid] } : { line: null, rings: [] };
@@ -234,7 +237,7 @@
     };
   }
 
-  // Container: hospitals (or beds) located inside the NPA boundary. No distance is used.
+  // Container: hospitals (or beds) located inside the tract boundary. No distance is used.
   function makeContainerLayer(settings, results) {
     var cls = Access.containerClasses(settings.measure);
     var isCount = settings.measure === "count";
@@ -254,7 +257,7 @@
       title: "Container: " + (isCount ? "number of hospitals" : "number of beds"),
       sub: cls.unit,
       labelFor: function (i) { return cls.labels[i]; },
-      note: "Darker green = more = better access. Class upper bounds are inclusive. People = 2020 population. Hospitals outside every NPA are not counted.",
+      note: "Darker green = more = better access. Class upper bounds are inclusive. People = 2024 population (ACS). Hospitals outside every tract are not counted.",
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -266,28 +269,28 @@
         var pi = popItems(function (p) { var r = results.get(p.id); return r ? (isCount ? r.n : r.beds) : null; });
         var st = pi.stats, rows = summaryHead(pi);
         var none = st.within(0);
-        rows.push({ label: "In an NPA with no " + (isCount ? "hospital" : "bed"), value: share(none, st.total) });
-        rows.push({ label: "In an NPA with at least one " + (isCount ? "hospital" : "bed"), value: share(st.total - none, st.total) });
-        rows.push({ label: "Mean " + (isCount ? "hospitals" : "beds") + " in the NPA", value: isCount ? st.mean.toFixed(2) : fmt(Math.round(st.mean)) });
-        return { rows: rows, note: "Population-weighted: each NPA counts as many times as it has residents. Only the NPA that contains a hospital is credited; no distance is used." };
+        rows.push({ label: "In a tract with no " + (isCount ? "hospital" : "bed"), value: share(none, st.total) });
+        rows.push({ label: "In a tract with at least one " + (isCount ? "hospital" : "bed"), value: share(st.total - none, st.total) });
+        rows.push({ label: "Mean " + (isCount ? "hospitals" : "beds") + " in the tract", value: isCount ? st.mean.toFixed(2) : fmt(Math.round(st.mean)) });
+        return { rows: rows, note: "Population-weighted: each tract counts as many times as it has residents. Only the tract that contains a hospital is credited; no distance is used." };
       },
-      serviceLegend: "NPA containing the selected hospital",
+      serviceLegend: "Tract containing the selected hospital",
       serviceOf: function (hid) {
         var ids = new Set();
         results.forEach(function (r, id) { if (r.hids.indexOf(hid) >= 0) ids.add(id); });
-        if (!ids.size) return { ids: ids, rows: [], note: "This hospital lies outside every NPA, so it is not counted anywhere." };
+        if (!ids.size) return { ids: ids, rows: [], note: "This hospital lies outside every tract, so it is not counted anywhere." };
         var id = ids.values().next().value;
-        return { ids: ids, rows: [{ label: "NPA containing it", value: npaProps.get(id).npa_name, active: true }, { label: "People in that NPA (2020)", value: people(popOf(id)) }], note: "Container credits only the NPA that holds the hospital." };
+        return { ids: ids, rows: [{ label: "Tract containing it", value: tractProps.get(id).name, active: true }, { label: "People in that tract (2024)", value: people(popOf(id)) }], note: "Container credits only the tract that holds the hospital." };
       },
       overlayFor: function (id) {
         var r = results.get(id);
         return { line: null, rings: r ? r.hids : [] };
       },
       appendDetail: function (box, p) {
-        box.appendChild(el("p", "detail-sub", "Hospitals in this NPA"));
+        box.appendChild(el("p", "detail-sub", "Hospitals in this tract"));
         var r = results.get(p.id);
         if (!r || r.n === 0) {
-          box.appendChild(el("p", "placeholder", "No hospital inside this NPA"));
+          box.appendChild(el("p", "placeholder", "No hospital inside this tract"));
           return;
         }
         box.appendChild(detailList([
@@ -303,7 +306,7 @@
     };
   }
 
-  // Gravity and 2SFCA share one layer builder: a score per NPA classed in five quantiles of the result
+  // Gravity and 2SFCA share one layer builder: a score per tract classed in five quantiles of the result
   // (the range moves a lot with the threshold, the decay function and outlying hospitals, so neither
   // fixed nor equal-interval bounds would hold up).
   //   Gravity: score = sum_j(beds_j * f(d_ij)), in weighted beds
@@ -322,20 +325,20 @@
     "2sfca": {
       title: "2SFCA: beds per 1,000 people",
       unitText: "beds per 1,000 people",
-      noteStart: "Step 1: for each hospital, R = beds ÷ Σ(population × f(d)) of the NPAs around it. Step 2: score = 1,000 × Σ(R × f(d)) over the hospitals around the NPA.",
+      noteStart: "Step 1: for each hospital, R = beds ÷ Σ(population × f(d)) of the tracts around it. Step 2: score = 1,000 × Σ(R × f(d)) over the hospitals around the tract.",
       score: function (v) { return v.toFixed(2); },
       scoreLabel: "Beds per 1,000 people",
       tip: function (v) { return v.toFixed(2) + " beds per 1,000 people"; },
       contribution: function (t) { return "f = " + t.f.toFixed(2) + " · R = " + t.r.toFixed(2); },
       contributionsTitle: "Largest contributions (R = beds per 1,000 people around the hospital)",
-      extraNote: " Hospitals outside Mecklenburg County count as supply, but only Mecklenburg residents are counted as demand, so their R is overstated.",
+      extraNote: " Demand = 2024 population of the tracts of all 14 counties around Mecklenburg. Hospitals near the outer edge of those counties still have incomplete catchments, so their R is overstated.",
     },
   };
 
   function makeScoreLayer(settings, results) {
     var spec = SCORE_SPECS[settings.method];
-    var vals = [];
-    results.forEach(function (r) { vals.push(r.score); });
+    var vals = []; // only the tracts drawn on the map; the results also hold the other counties' tracts
+    tractFeatures.forEach(function (f) { var r = results.get(f.properties.id); if (r) vals.push(r.score); });
     var ei = Access.quantiles(vals, 5);
     var unit = settings.impedance === "time" ? "min" : "km";
     var dec = ei.flat ? (settings.method === "2sfca" ? 2 : 0) : settings.method === "2sfca" ? Math.max(ei.decimals, 1) : ei.decimals; // beds per 1,000 people: at least one decimal
@@ -355,8 +358,8 @@
         var hi = i < 4 ? ei.breaks[i] : ei.max;
         return lo.toFixed(dec) + " – " + hi.toFixed(dec);
       },
-      note: spec.noteStart + " Darker green = higher = better access. Five quantile classes (about the same number of NPAs in each) computed from this result; class upper bounds are inclusive. Hospitals without a bed count are not in the supply. People = 2020 population." +
-        (spec.extraNote || "") + (ei.flat ? " All NPAs have the same score." : ""),
+      note: spec.noteStart + " Darker green = higher = better access. Five quantile classes (about the same number of tracts in each) computed from this result; class upper bounds are inclusive. Hospitals without a bed count are not in the supply. People = 2024 population (ACS)." +
+        (spec.extraNote || "") + (ei.flat ? " All tracts have the same score." : ""),
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -372,22 +375,27 @@
           var low = pi.items.filter(function (it) { return Access.classifyFixed(it.v, ei.breaks) === 0; }).reduce(function (s, it) { return s + it.w; }, 0);
           rows.push({ label: "People in the lowest class", value: share(low, st.total) });
         }
-        return { rows: rows, note: "Unit: " + spec.unitText + ". Population-weighted: each NPA counts as many times as it has residents. The median is the value at which half of those people are reached. Lowest class = the bottom fifth of NPAs by score." };
+        return { rows: rows, note: "Unit: " + spec.unitText + ". Population-weighted: each tract counts as many times as it has residents. The median is the value at which half of those people are reached. Lowest class = the bottom fifth of tracts by score." };
       },
-      serviceLegend: "NPA within the threshold of the selected hospital",
+      serviceLegend: "Tract within the threshold of the selected hospital",
       serviceOf: function (hid) {
-        var cat = Access.catchment(odByNpa, hid, settings.basis, settings.impedance, { kind: settings.decay, d0: settings.d0, beta: settings.beta });
-        var ids = new Set(), pop = 0, wpop = 0;
-        cat.forEach(function (c) { ids.add(c.npaId); pop += popOf(c.npaId); wpop += popOf(c.npaId) * c.f; });
+        var cat = Access.catchment(odByTract, hid, settings.basis, settings.impedance, { kind: settings.decay, d0: settings.d0, beta: settings.beta });
+        var ids = new Set(), pop = 0, popAll = 0, wpopAll = 0;
+        cat.forEach(function (c) {
+          var dp = demandPop.get(c.tractId) || 0;
+          popAll += dp; wpopAll += dp * c.f; // every county: this is the demand behind R
+          if (tractProps.has(c.tractId)) { ids.add(c.tractId); pop += popOf(c.tractId); }
+        });
         var beds = hospitals.get(hid).beds;
-        var rows = [{ label: "NPAs within threshold", value: String(ids.size), active: true }, { label: "People in those NPAs (2020)", value: people(pop) }, { label: "Beds", value: fmt(beds) }];
-        if (settings.method === "2sfca" && wpop > 0) {
-          rows.push({ label: "People weighted by f(d)", value: people(wpop) });
-          rows.push({ label: "R: beds per 1,000 people", value: (1000 * beds / wpop).toFixed(2) });
+        var rows = [{ label: "Tracts within threshold", value: String(ids.size), active: true }, { label: "People in those tracts (2024)", value: people(pop) }, { label: "Beds", value: fmt(beds) }];
+        if (settings.method === "2sfca" && wpopAll > 0) {
+          rows.push({ label: "People within threshold, all counties", value: people(popAll) });
+          rows.push({ label: "People weighted by f(d), all counties", value: people(wpopAll) });
+          rows.push({ label: "R: beds per 1,000 people", value: (1000 * beds / wpopAll).toFixed(2) });
         }
-        var note = !ids.size ? "No NPA lies within the threshold, so this hospital contributes nothing."
-          : settings.method === "2sfca" ? "R = beds ÷ Σ(population × f(d)) over these NPAs, times 1,000. Residents of counties outside Mecklenburg are not counted, so R is overstated for hospitals near the county line."
-          : "Highlighted NPAs have a weight f(d) > 0 for this hospital.";
+        var note = !ids.size ? "No Mecklenburg County tract lies within the threshold of this hospital."
+          : settings.method === "2sfca" ? "R = beds ÷ Σ(population × f(d)) over the tracts of all 14 counties around the hospital, times 1,000. Only Mecklenburg County tracts are highlighted."
+          : "Highlighted tracts (Mecklenburg County) have a weight f(d) > 0 for this hospital.";
         return { ids: ids, rows: rows, note: note };
       },
       overlayFor: function (id) {
@@ -415,7 +423,7 @@
     };
   }
 
-  // ---------- NPA styling ----------
+  // ---------- tract styling ----------
   // Boundaries-only look, used while no layer is selected.
   var NEUTRAL_STYLE = { color: "#4b6e8c", weight: 1, opacity: 0.9, fillColor: "#4b6e8c", fillOpacity: 0.18 };
   var HOVER_STYLE = { color: "#222222", weight: 2 };
@@ -432,7 +440,7 @@
       fillColor: missing ? NO_DATA_COLOR : current.colors[current.classOf(v)],
       fillOpacity: missing ? 0.6 : 0.82,
     };
-    if (highlightIds) { // a hospital is selected: outline the NPAs it serves, fade the rest
+    if (highlightIds) { // a hospital is selected: outline the tracts it serves, fade the rest
       if (highlightIds.has(feature.properties.id)) { style.color = "#0d2f4a"; style.weight = 2.2; style.opacity = 1; }
       else style.fillOpacity = 0.18;
     }
@@ -445,8 +453,8 @@
     if (!current) {
       var plain = el("ul", "legend");
       var item = el("li");
-      item.appendChild(el("span", "sw sw-npa"));
-      item.appendChild(document.createTextNode("NPA boundary"));
+      item.appendChild(el("span", "sw sw-tract"));
+      item.appendChild(document.createTextNode("Tract boundary"));
       plain.appendChild(item);
       box.appendChild(plain);
       return;
@@ -457,9 +465,9 @@
     var counts = current.colors.map(function () { return 0; });
     var pops = current.colors.map(function () { return 0; });
     var missing = 0, missingPop = 0;
-    npaFeatures.forEach(function (f) {
+    tractFeatures.forEach(function (f) {
       var v = current.valueOf(f.properties);
-      var pop = f.properties.pop_2020 || 0;
+      var pop = f.properties.pop || 0;
       if (v === null || v === undefined) { missing += 1; missingPop += pop; }
       else { var c = current.classOf(v); counts[c] += 1; pops[c] += pop; }
     });
@@ -470,7 +478,7 @@
       sw.style.background = color;
       li.appendChild(sw);
       li.appendChild(el("span", "legend-range", label));
-      li.appendChild(el("span", "legend-count", current.showPop ? String(n) : n + " NPAs"));
+      li.appendChild(el("span", "legend-count", current.showPop ? String(n) : n + " tracts"));
       if (current.showPop) li.appendChild(el("span", "legend-pop", fmt(Math.round(pop))));
       return li;
     }
@@ -480,7 +488,7 @@
       var head = el("li", "legend-head");
       head.appendChild(el("span"));
       head.appendChild(el("span"));
-      head.appendChild(el("span", "legend-count", "NPAs"));
+      head.appendChild(el("span", "legend-count", "Tracts"));
       head.appendChild(el("span", "legend-pop", "People"));
       ul.appendChild(head);
     }
@@ -490,7 +498,7 @@
     box.appendChild(el("p", "legend-note", current.note));
   }
 
-  // ---------- selected NPA detail ----------
+  // ---------- selected tract detail ----------
   function detailList(rows) {
     var dl = el("dl", "detail-list");
     rows.forEach(function (r) {
@@ -502,9 +510,9 @@
   }
 
   function showDetail(p) {
-    var box = byId("npa-detail");
+    var box = byId("selection-detail");
     box.replaceChildren();
-    box.appendChild(el("p", "detail-title", p.npa_name));
+    box.appendChild(el("p", "detail-title", p.name));
     box.appendChild(detailList(INDICATORS.map(function (ind) {
       return { label: ind.label, value: formatValue(ind, p[ind.key]), active: !!current && current.kind === "indicator" && current.ind === ind };
     })));
@@ -512,9 +520,9 @@
     if (current && current.kind === "access") current.appendDetail(box, p);
   }
 
-  // Detail of the selected hospital, with the NPAs it serves under the active measure.
+  // Detail of the selected hospital, with the tracts it serves under the active measure.
   function renderHospSelection() {
-    var box = byId("npa-detail");
+    var box = byId("selection-detail");
     box.replaceChildren();
     var p = hospitals.get(selectedHosp);
     box.appendChild(el("p", "detail-title", p.name));
@@ -526,7 +534,7 @@
     highlightIds = null;
     var legendText = null;
     if (current && current.kind === "access") {
-      box.appendChild(el("p", "detail-sub", METHOD_LABELS[current.settings.method] + ": NPAs served"));
+      box.appendChild(el("p", "detail-sub", METHOD_LABELS[current.settings.method] + ": tracts served"));
       if (!supplyIncluded || !supplyIncluded.has(selectedHosp)) {
         box.appendChild(el("p", "placeholder", "This hospital is not included in the applied analysis."));
       } else {
@@ -537,7 +545,7 @@
         box.appendChild(el("p", "legend-note", svc.note));
       }
     } else {
-      box.appendChild(el("p", "placeholder", "Apply an accessibility measure to see the NPAs this hospital serves."));
+      box.appendChild(el("p", "placeholder", "Apply an accessibility measure to see the tracts this hospital serves."));
     }
     byId("legend-served-text").textContent = legendText || "";
     byId("legend-served").hidden = !highlightIds;
@@ -546,7 +554,7 @@
   function tooltipFor(layer) {
     var p = layer.feature.properties;
     var box = el("div");
-    box.appendChild(el("div", "tip-title", p.npa_name));
+    box.appendChild(el("div", "tip-title", p.name));
     if (current) box.appendChild(el("div", "tip-sub", current.tooltipLine(p)));
     return box;
   }
@@ -556,12 +564,12 @@
   map.getPane("links").style.zIndex = 445; // above polygons, below hospital markers
   var linkGroup = L.layerGroup().addTo(map);
 
-  // Draws, for the selected NPA, the hospitals the active result links it to:
+  // Draws, for the selected tract, the hospitals the active result links it to:
   // a ring on each, and (closest facility only) a straight line to the nearest one.
   function updateLink() {
     linkGroup.clearLayers();
     var line = false, ring = false;
-    byId("legend-ring-text").textContent = "Hospital linked to the selected NPA";
+    byId("legend-ring-text").textContent = "Hospital linked to the selected tract";
     if (selectedHosp && hospMarkers.get(selectedHosp)) {
       var hm = hospMarkers.get(selectedHosp);
       L.circleMarker(hm.getLatLng(), { pane: "hospitals", radius: hospitalRadius(hospitals.get(selectedHosp).beds) + 5, color: "#0d2f4a", weight: 3, fill: false, interactive: false }).addTo(linkGroup);
@@ -590,20 +598,20 @@
     selectedHosp = null;
     highlightIds = null;
     byId("legend-served").hidden = true;
-    npaLayer.setStyle(baseStyle);
+    tractLayer.setStyle(baseStyle);
   }
 
   function clearSelection() {
     if (!selected && !selectedHosp) return;
-    if (selected) { npaLayer.resetStyle(selected); selected = null; }
+    if (selected) { tractLayer.resetStyle(selected); selected = null; }
     if (selectedHosp) clearHospSelection();
-    byId("npa-detail").replaceChildren(el("p", "placeholder", "Click an area or a hospital on the map"));
+    byId("selection-detail").replaceChildren(el("p", "placeholder", "Click an area or a hospital on the map"));
     updateLink();
   }
 
-  function selectNPA(layer) {
-    if (selectedHosp) clearHospSelection(); // an NPA and a hospital are never selected together
-    if (selected) npaLayer.resetStyle(selected);
+  function selectTract(layer) {
+    if (selectedHosp) clearHospSelection(); // a tract and a hospital are never selected together
+    if (selected) tractLayer.resetStyle(selected);
     selected = layer;
     layer.setStyle(SELECTED_STYLE);
     layer.bringToFront();
@@ -612,10 +620,10 @@
   }
 
   function selectHospital(hid) {
-    if (selected) { npaLayer.resetStyle(selected); selected = null; }
+    if (selected) { tractLayer.resetStyle(selected); selected = null; }
     selectedHosp = hid;
     renderHospSelection();
-    npaLayer.setStyle(baseStyle);
+    tractLayer.setStyle(baseStyle);
     updateLink();
   }
 
@@ -636,7 +644,7 @@
   function setLayer(layer) {
     current = layer;
     if (selectedHosp) renderHospSelection(); // sets highlightIds for the new layer
-    npaLayer.setStyle(baseStyle);
+    tractLayer.setStyle(baseStyle);
     if (selected) {
       selected.setStyle(SELECTED_STYLE);
       showDetail(selected.feature.properties);
@@ -676,18 +684,18 @@
     accessRadioText = a.span;
   }
 
-  function addNPA(geojson) {
-    npaFeatures = geojson.features;
-    npaFeatures.forEach(function (f) { npaProps.set(f.properties.id, f.properties); });
-    npaLayer = L.geoJSON(geojson, {
+  function addTracts(geojson) {
+    tractFeatures = geojson.features;
+    tractFeatures.forEach(function (f) { tractProps.set(f.properties.id, f.properties); });
+    tractLayer = L.geoJSON(geojson, {
       style: baseStyle,
       bubblingMouseEvents: false, // a click on a polygon must not reach the map's own click handler
       onEachFeature: function (feature, layer) {
         layer.bindTooltip(tooltipFor, { sticky: true });
         layer.on({
           mouseover: function () { if (layer !== selected) layer.setStyle(HOVER_STYLE); },
-          mouseout: function () { if (layer !== selected) npaLayer.resetStyle(layer); },
-          click: function () { selectNPA(layer); },
+          mouseout: function () { if (layer !== selected) tractLayer.resetStyle(layer); },
+          click: function () { selectTract(layer); },
         });
       },
     }).addTo(map);
@@ -695,7 +703,7 @@
     updateLegend();
   }
 
-  // Clicking the map outside any NPA polygon, or pressing Esc, clears the selection.
+  // Clicking the map outside any tract polygon, or pressing Esc, clears the selection.
   // (Dragging the map does not fire "click", so panning keeps the selection.)
   map.on("click", clearSelection);
   document.addEventListener("keydown", function (e) {
@@ -769,7 +777,7 @@
   // =====================================================================
   // Accessibility panel: choose settings, then press Apply
   // =====================================================================
-  var odByNpa = null;
+  var odByTract = null;
   var hospFeatures = [];
   var accessLayer = null;
   var appliedKey = null;
@@ -837,7 +845,7 @@
     var enabled = true;
     if (gap) { msg = gap + ", then press Apply."; enabled = false; }
     else if (s.types.length === 0) { msg = "Select at least one hospital type."; enabled = false; }
-    else if ((s.method !== "container") && !odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    else if ((s.method !== "container") && !odByTract) { msg = "OD matrix not available."; enabled = false; }
     else if (usesDecay(s.method) && gravitySupplyCount(s) === 0) { msg = "No included hospital has a bed count."; enabled = false; }
     else if (appliedKey === null) msg = "Press Apply to show the result.";
     else if (changed) msg = "Settings changed. Press Apply to update the map.";
@@ -999,7 +1007,7 @@
     });
     var counted = included; // hospitals that actually enter the calculation
     if (s.method === "container") {
-      accessLayer = makeContainerLayer(s, Access.container(npaFeatures, hospFeatures, included));
+      accessLayer = makeContainerLayer(s, Access.container(tractFeatures, hospFeatures, included));
     } else if (usesDecay(s.method)) {
       // supply = beds, so a hospital without a bed count cannot be part of it
       var supply = new Map();
@@ -1007,16 +1015,14 @@
       var opts = { kind: s.decay, d0: s.d0, beta: s.beta };
       var results;
       if (s.method === "gravity") {
-        results = Access.gravity(odByNpa, supply, s.basis, s.impedance, opts);
+        results = Access.gravity(odByTract, supply, s.basis, s.impedance, opts);
       } else {
-        var demand = new Map();
-        npaFeatures.forEach(function (f) { demand.set(f.properties.id, f.properties.pop_2020 || 0); });
-        results = Access.sfca(odByNpa, supply, demand, s.basis, s.impedance, opts).byNpa;
+        results = Access.sfca(odByTract, supply, demandPop, s.basis, s.impedance, opts).byTract;
       }
       accessLayer = makeScoreLayer(s, results);
       counted = new Set(supply.keys());
     } else {
-      accessLayer = makeClosestLayer(s, Access.closestFacility(odByNpa, included, s.basis, s.impedance));
+      accessLayer = makeClosestLayer(s, Access.closestFacility(odByTract, included, s.basis, s.impedance));
     }
 
     supplyIncluded = counted;
@@ -1032,7 +1038,7 @@
   }
 
   function initAccessPanel(hospitalFeatures, od) {
-    odByNpa = od;
+    odByTract = od;
     hospFeatures = hospitalFeatures;
     var types = {};
     hospitalFeatures.forEach(function (f) { types[f.properties.type] = true; });
@@ -1042,7 +1048,7 @@
       var input = el("input");
       input.type = "checkbox";
       input.value = t;
-      input.checked = true; // specialty hospitals are included by default
+      input.checked = t !== "MILITARY"; // specialty hospitals are included by default; military hospitals serve a restricted population
       input.addEventListener("change", updateHint);
       label.appendChild(input);
       label.appendChild(document.createTextNode(" " + sentence(t)));
@@ -1076,25 +1082,36 @@
   // =====================================================================
   // Load data
   // =====================================================================
+  // tracts_all.csv: geoid,county_fips,pop,lon,lat,basis
+  function parseDemand(text) {
+    text.split(/\r?\n/).slice(1).forEach(function (line) {
+      if (!line) return;
+      var f = line.split(",");
+      demandPop.set(f[0], parseFloat(f[2]));
+    });
+  }
+
   var odError = null;
   var odPromise = loadText("data/input/od_matrix.csv")
     .then(Access.parseOD)
     .catch(function (err) { console.error(err); odError = err.message; return null; });
 
   Promise.all([
-    loadJSON("data/input/npa_input.geojson"),
+    loadJSON("data/input/tracts_mecklenburg.geojson"),
     loadJSON("data/input/hospitals_input.geojson"),
+    loadText("data/input/tracts_all.csv"),
     odPromise,
   ])
     .then(function (res) {
-      addNPA(res[0]);
+      addTracts(res[0]);
+      parseDemand(res[2]);
       var hosp = addHospitals(res[1]);
-      // Fit to NPAs and all hospitals, including those outside Mecklenburg County.
-      map.fitBounds(npaLayer.getBounds().extend(hosp.getBounds()), { padding: [20, 20] });
-      L.control.layers(null, { "NPA boundaries": npaLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
-      initAccessPanel(res[1].features, res[2]);
+      // Fit to Mecklenburg County; hospitals in the other counties are reached by panning.
+      map.fitBounds(tractLayer.getBounds(), { padding: [20, 20] });
+      L.control.layers(null, { "Tract boundaries": tractLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
+      initAccessPanel(res[1].features, res[3]);
       if (odError) setStatus("OD matrix failed to load: " + odError, true);
-      else setStatus(res[0].features.length + " NPAs, " + res[1].features.length + " hospitals, OD matrix loaded.");
+      else setStatus(res[0].features.length + " Mecklenburg County tracts, " + res[1].features.length + " hospitals, " + demandPop.size + " demand tracts, OD matrix loaded.");
     })
     .catch(function (err) {
       console.error(err);

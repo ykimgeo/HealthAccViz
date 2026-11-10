@@ -1,0 +1,49 @@
+{
+  "source": "Carolinas Regional Explorer tract indicators (2024, ACS 5-year based), ACS block-group B01001, Census TIGER/Line 2024 boundaries, HIFLD hospitals",
+  "year": 2024,
+  "tracts": {
+    "counties": [
+      "37007",
+      "37025",
+      "37035",
+      "37045",
+      "37071",
+      "37097",
+      "37109",
+      "37119",
+      "37159",
+      "37167",
+      "37179",
+      "45023",
+      "45057",
+      "45091"
+    ],
+    "tracts": 752,
+    "population_total": 3097622,
+    "mecklenburg_tracts": 305,
+    "mecklenburg_population": 1154681,
+    "block_groups": 1813,
+    "tract_vs_block_group_sum_mismatches": 0,
+    "centroids_outside_tract_polygon": 3,
+    "centroid_max_distance_to_polygon_m": 144.3,
+    "centroid_vs_internal_point_median_m": 318.2,
+    "zero_population_tracts": 2,
+    "polygon_simplify_tolerance_m": 6.0,
+    "polygon_area_change_percent": -0.0,
+    "missing_indicator_values": {
+      "pop_density": 0,
+      "older_adult_pct": 2,
+      "household_income": 3
+    }
+  },
+  "hospitals": {
+    "hospitals": 40,
+    "by_type": {
+      "GENERAL ACUTE CARE": 31,
+      "REHABILITATION": 4,
+      "PSYCHIATRIC": 3,
+      "LONG TERM CARE": 1,
+      "MILITARY": 1
+    }
+  }
+}

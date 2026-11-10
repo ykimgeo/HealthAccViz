@@ -1,26 +1,30 @@
-"""Build the NPA-to-hospital OD matrix (car driving) with r5py and OSM data.
+"""Build the tract-to-hospital OD matrix (car driving) with r5py and OSM data.
 
 Steps
   1. Download the North Carolina and South Carolina OSM extracts from Geofabrik.
-  2. Clip each extract to the study area (NPAs + all hospitals + buffer) and merge.
-  3. Route from every NPA centroid to every hospital with r5py (car mode):
+  2. Clip each extract to the study area (tract centroids + all hospitals + buffer) and merge.
+  3. Route from every tract's population-weighted centroid to every hospital with r5py (car mode):
        - travel time           TravelTimeMatrix
        - network distance      DetailedItineraries (sum of leg distances)
   4. Add Euclidean distance (UTM 17N, EPSG:32617) and write the CSV + a metadata file.
 
 Run from the repository root, inside the conda env from environment.yml:
 
-    python tools/build_od_matrix.py --limit-npa 5      # quick smoke test first
+    python tools/build_od_matrix.py --limit-tract 5    # quick smoke test first
     python tools/build_od_matrix.py                    # full run
 
+The origins are the 752 tracts of data/input/tracts_all.csv (written by tools/prepare_input.py), the
+destinations are the hospitals of data/input/hospitals_input.geojson, so one run routes about 30,000
+pairs. The detailed-itineraries step is the slow one.
+
 Outputs
-    data/input/od_matrix.csv        npa_id, hid, euclid_km, network_km, network_min
+    data/input/od_matrix.csv        tract_id, hid, euclid_km, network_km, network_min
     data/input/od_matrix.meta.json  provenance (OSM file dates, versions, settings, QA)
 
 Notes
   * Travel time is free-flow driving time from OSM speed limits / road-class
     defaults used by R5. It does not include traffic, signals or parking.
-  * Routes run from the NPA centroid to the hospital, so one-way streets and
+  * Routes run from the tract's population-weighted centroid to the hospital, so one-way streets and
     turn restrictions apply in that direction only.
   * r5py snaps origins and destinations to the nearest street.
   * Geofabrik extracts are large; they are stored in --workdir (build/), which
@@ -130,34 +134,31 @@ def run(cmd):
 
 
 # ---------------------------------------------------------------- inputs
-def load_inputs(npa_path, hosp_path, limit_npa):
-    npa = gpd.read_file(npa_path)
+def load_inputs(tract_path, hosp_path, limit_tract):
+    t = pd.read_csv(tract_path, dtype={"geoid": str, "county_fips": str})
     hosp = gpd.read_file(hosp_path)
-    if npa.crs is None or hosp.crs is None:
-        raise SystemExit("input GeoJSON has no CRS; expected EPSG:4326")
-    npa = npa.to_crs("EPSG:4326")
+    if hosp.crs is None:
+        raise SystemExit("hospital GeoJSON has no CRS; expected EPSG:4326")
     hosp = hosp.to_crs("EPSG:4326")
+    if not t["geoid"].is_unique:
+        raise SystemExit("tract ids are not unique")
 
-    # study-area bounding box is taken from ALL NPAs and hospitals (before any --limit-npa)
-    minx = min(npa.total_bounds[0], hosp.total_bounds[0])
-    miny = min(npa.total_bounds[1], hosp.total_bounds[1])
-    maxx = max(npa.total_bounds[2], hosp.total_bounds[2])
-    maxy = max(npa.total_bounds[3], hosp.total_bounds[3])
+    # study-area bounding box is taken from ALL tract centroids and hospitals (before any --limit-tract)
+    minx = min(t["lon"].min(), hosp.total_bounds[0])
+    miny = min(t["lat"].min(), hosp.total_bounds[1])
+    maxx = max(t["lon"].max(), hosp.total_bounds[2])
+    maxy = max(t["lat"].max(), hosp.total_bounds[3])
     bbox = (minx, miny, maxx, maxy)
 
-    if limit_npa:
-        npa = npa.iloc[:limit_npa].copy()
+    if limit_tract:
+        t = t.iloc[:limit_tract].copy()
 
-    # geometric centroids computed in a projected CRS
-    poly_utm = npa.to_crs(UTM).geometry
-    cen = poly_utm.centroid
-    npa_pts = gpd.GeoDataFrame({"npa_id": npa["id"].astype(str).values}, geometry=cen.to_crs("EPSG:4326").values, crs="EPSG:4326")
-    n_outside = int((~cen.within(poly_utm)).sum())  # both are GeoSeries with the same index
-    log(f"  {len(npa_pts)} NPA centroids ({n_outside} fall outside their own polygon)")
+    tract_pts = gpd.GeoDataFrame({"tract_id": t["geoid"].astype(str).values}, geometry=gpd.points_from_xy(t["lon"], t["lat"]), crs="EPSG:4326")
+    log(f"  {len(tract_pts)} tract centroids (population-weighted)")
 
     hosp_pts = gpd.GeoDataFrame({"hid": hosp["hid"].astype(str).values}, geometry=hosp.geometry.values, crs="EPSG:4326")
     log(f"  {len(hosp_pts)} hospitals")
-    return npa_pts, hosp_pts, bbox, n_outside
+    return tract_pts, hosp_pts, bbox
 
 
 # ---------------------------------------------------------------- OSM
@@ -209,13 +210,13 @@ def route(region_pbf, origins, destinations, max_time_min):
     d = destinations.copy()
     # r5py identifies every point by its "id" column and only requires the values to be
     # unique (r5py/util/data_validation.py); strings are fine. We use the datasets' own
-    # identifiers as strings: the NPA number for origins and the hospital hid for
-    # destinations. r5py's from_id / to_id therefore ARE the NPA number and the hospital
+    # identifiers as strings: the tract GEOID for origins and the hospital hid for
+    # destinations. r5py's from_id / to_id therefore ARE the tract GEOID and the hospital
     # hid, with leading zeros intact, and no mapping back is needed.
     # An origin id must never equal a destination id: r5py sets the travel time of every
     # pair with from_id == to_id to 0 (r5py/r5/travel_time_matrix.py), which is what made
     # origin index i and destination index i come back as 0 minutes.
-    o["id"] = o["npa_id"].astype(str)
+    o["id"] = o["tract_id"].astype(str)
     d["id"] = d["hid"].astype(str)
     for name, ids in (("origin", o["id"]), ("destination", d["id"])):
         if not ids.is_unique:
@@ -259,23 +260,23 @@ def route(region_pbf, origins, destinations, max_time_min):
         frame["from_id"] = frame["from_id"].astype(str)
         frame["to_id"] = frame["to_id"].astype(str)
     m = ttm.merge(dist, on=["from_id", "to_id"], how="outer")
-    m["npa_id"] = m["from_id"]  # the r5py ids are the NPA number and the hospital hid
+    m["tract_id"] = m["from_id"]  # the r5py ids are the tract GEOID and the hospital hid
     m["hid"] = m["to_id"]
     m["network_min"] = m["travel_time"].astype(float)
     m["network_km"] = m["distance"].astype(float) / 1000.0
-    return m[["npa_id", "hid", "network_km", "network_min"]]
+    return m[["tract_id", "hid", "network_km", "network_min"]]
 
 
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--npa", default="data/input/npa_input.geojson")
+    ap.add_argument("--tracts", default="data/input/tracts_all.csv")
     ap.add_argument("--hospitals", default="data/input/hospitals_input.geojson")
     ap.add_argument("--workdir", default="build/osm")
     ap.add_argument("--out", default="data/input/od_matrix.csv")
     ap.add_argument("--buffer-deg", type=float, default=0.1, help="padding around the study area when clipping OSM (degrees)")
     ap.add_argument("--max-time-min", type=int, default=240, help="routing time limit; pairs above it come back empty")
-    ap.add_argument("--limit-npa", type=int, default=0, help="only use the first N NPAs (smoke test)")
+    ap.add_argument("--limit-tract", type=int, default=0, help="only use the first N tracts (smoke test)")
     ap.add_argument("--skip-download", action="store_true", help="reuse PBFs already in --workdir")
     args = ap.parse_args()
 
@@ -283,7 +284,7 @@ def main():
         raise SystemExit("osmium not found. Activate the conda env from environment.yml (it provides osmium-tool).")
 
     log("Inputs")
-    origins, dests, bbox, n_outside = load_inputs(args.npa, args.hospitals, args.limit_npa)
+    origins, dests, bbox = load_inputs(args.tracts, args.hospitals, args.limit_tract)
 
     log("OSM extracts")
     region, osm_meta = prepare_osm(args.workdir, bbox, args.buffer_deg, args.skip_download)
@@ -292,16 +293,16 @@ def main():
     od = route(region, origins, dests, args.max_time_min)
 
     log("Euclidean distances")
-    o_utm = origins.to_crs(UTM).set_index("npa_id").geometry
+    o_utm = origins.to_crs(UTM).set_index("tract_id").geometry
     d_utm = dests.to_crs(UTM).set_index("hid").geometry
-    ox = od["npa_id"].map(o_utm.x)
-    oy = od["npa_id"].map(o_utm.y)
+    ox = od["tract_id"].map(o_utm.x)
+    oy = od["tract_id"].map(o_utm.y)
     dx = od["hid"].map(d_utm.x)
     dy = od["hid"].map(d_utm.y)
     od["euclid_km"] = np.hypot(ox - dx, oy - dy) / 1000.0
 
-    od = od[["npa_id", "hid", "euclid_km", "network_km", "network_min"]]
-    od = od.sort_values(["npa_id", "hid"], key=lambda s: s.astype(str)).reset_index(drop=True)
+    od = od[["tract_id", "hid", "euclid_km", "network_km", "network_min"]]
+    od = od.sort_values(["tract_id", "hid"], key=lambda s: s.astype(str)).reset_index(drop=True)
 
     # ---- QA
     n_pairs = len(od)
@@ -313,7 +314,6 @@ def main():
         "pairs_expected": expected,
         "pairs_missing_network": n_nan,
         "pairs_zero_minutes_but_over_1km": int(((od["network_min"] == 0) & (od["network_km"] > 1)).sum()),
-        "npa_centroids_outside_polygon": n_outside,
         "circuity_ratio_network_over_euclid": {
             "min": round(float(circuity.min()), 3) if len(circuity) else None,
             "median": round(float(circuity.median()), 3) if len(circuity) else None,
@@ -340,12 +340,12 @@ def main():
     meta = {
         "created_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "mode": "car (free-flow, OSM speeds as used by R5)",
-        "origins": "NPA geometric centroids (computed in " + UTM + ")",
+        "origins": "tracts_all.csv: population-weighted centroids of the tract's block groups (ACS 2024)",
         "destinations": "hospitals_input.geojson (all rows, open and closed)",
         "euclid_crs": UTM,
         "departure": DEPARTURE.isoformat(),
         "max_time_min": args.max_time_min,
-        "limit_npa": args.limit_npa or None,
+        "limit_tract": args.limit_tract or None,
         "versions": {"python": sys.version.split()[0], "r5py": r5py.__version__, "geopandas": gpd.__version__, "pandas": pd.__version__},
         "osm": osm_meta,
         "attribution": "Contains data from OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)",
