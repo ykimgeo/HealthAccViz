@@ -97,6 +97,33 @@ def download(url, dest):
     return last_modified
 
 
+def osm_data_timestamp(pbf):
+    """Timestamp stored in the PBF header (the date the extract's data was current), or None."""
+    try:
+        out = subprocess.run(["osmium", "fileinfo", "-j", pbf], check=True, capture_output=True, text=True).stdout
+        info = json.loads(out)
+    except Exception as e:  # keep the run going; the gap is visible as null in the metadata
+        log(f"  could not read the PBF header of {pbf}: {e}")
+        return None
+
+    def find(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k == "osmosis_replication_timestamp":
+                    return v
+                r = find(v)
+                if r:
+                    return r
+        elif isinstance(x, list):
+            for v in x:
+                r = find(v)
+                if r:
+                    return r
+        return None
+
+    return find(info)
+
+
 def run(cmd):
     log("  $ " + " ".join(cmd))
     subprocess.run(cmd, check=True)
@@ -142,19 +169,28 @@ def prepare_osm(workdir, bbox, buffer_deg, skip_download):
     b = f"{minx - buffer_deg:.5f},{miny - buffer_deg:.5f},{maxx + buffer_deg:.5f},{maxy + buffer_deg:.5f}"
     for key, url in GEOFABRIK.items():
         raw = os.path.join(workdir, f"{key}-latest.osm.pbf")
+        existed = os.path.exists(raw)
         if not skip_download:
             lm = download(url, raw)
-        elif not os.path.exists(raw):
+        elif not existed:
             raise SystemExit(f"--skip-download set but {raw} is missing")
         else:
             lm = None
+        mtime = dt.datetime.fromtimestamp(os.path.getmtime(raw), dt.timezone.utc).isoformat(timespec="seconds")
         meta[key] = {
             "url": url,
+            # when the data inside the extract was current (from the PBF header); the date to cite
+            "osm_data_timestamp": osm_data_timestamp(raw),
+            # HTTP header of the download; null when an existing file was reused
             "last_modified_header": lm,
-            "downloaded_or_found_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "downloaded_this_run": not existed,
+            # local file time: when this copy was written to disk, not the OSM data date
+            "file_modified_utc": mtime,
+            "checked_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "bytes": os.path.getsize(raw),
             "sha256": sha256(raw),
         }
+        log(f"  {key}: OSM data timestamp = {meta[key]['osm_data_timestamp']}")
         out = os.path.join(workdir, f"{key}-clip.osm.pbf")
         run(["osmium", "extract", "--bbox", b, raw, "-o", out, "--overwrite"])
         clipped.append(out)
@@ -171,9 +207,16 @@ def route(region_pbf, origins, destinations, max_time_min):
     log(f"  r5py {r5py.__version__}")
     o = origins.copy()
     d = destinations.copy()
-    # r5py wants a unique integer-like "id" column; map back to our string ids afterwards
+    # r5py identifies every point by its "id" column and the ids must be unique.
+    # Origins and destinations share ONE id range (origins 0..n_o-1, destinations
+    # n_o..n_o+n_d-1), so an origin id can never equal a destination id. Separate
+    # 0..n ranges made origin i and destination i collide, and r5py returned
+    # 0 minutes for those pairs. The "id" columns are the join keys used below.
     o["id"] = np.arange(len(o))
-    d["id"] = np.arange(len(d))
+    d["id"] = np.arange(len(d)) + len(o)
+    all_ids = pd.concat([o["id"], d["id"]])
+    if not all_ids.is_unique:
+        raise SystemExit("origin and destination ids must be unique across both sets")
 
     net = r5py.TransportNetwork(region_pbf)
     max_time = dt.timedelta(minutes=max_time_min)
@@ -260,6 +303,7 @@ def main():
         "pairs": n_pairs,
         "pairs_expected": expected,
         "pairs_missing_network": n_nan,
+        "pairs_zero_minutes_but_over_1km": int(((od["network_min"] == 0) & (od["network_km"] > 1)).sum()),
         "npa_centroids_outside_polygon": n_outside,
         "circuity_ratio_network_over_euclid": {
             "min": round(float(circuity.min()), 3) if len(circuity) else None,
@@ -273,6 +317,8 @@ def main():
         log(f"  {k}: {v}")
     if n_pairs != expected:
         log("  WARNING: pair count differs from origins x destinations")
+    if qa["pairs_zero_minutes_but_over_1km"]:
+        log("  WARNING: pairs with 0 minutes but more than 1 km; check the origin/destination ids")
     if n_nan:
         log("  WARNING: some pairs have no route (raise --max-time-min or check snapping)")
 
