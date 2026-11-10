@@ -125,7 +125,7 @@
   }
 
   // ---------- accessibility result layer ----------
-  var METHOD_LABELS = { closest: "Closest facility" };
+  var METHOD_LABELS = { closest: "Closest facility", container: "Container" };
   var BASIS_LABELS = { network: "road network", euclid: "Euclidean distance" };
   var IMPEDANCE_LABELS = { time: "travel time", distance: "travel distance" };
 
@@ -133,7 +133,8 @@
     return unit === "min" ? fmt(v, { maximumFractionDigits: 0 }) + " min" : v.toFixed(1) + " km";
   }
 
-  function makeAccessLayer(settings, results) {
+  // Closest facility: cost (min or km) from the NPA to its nearest included hospital.
+  function makeClosestLayer(settings, results) {
     var fb = Access.fixedBreaks(settings.impedance);
     var b = fb.breaks;
     return {
@@ -157,6 +158,79 @@
         var r = results.get(p.id);
         if (!r) return "No hospital included in this analysis";
         return fmtCost(r.cost, fb.unit) + " · " + hospitals.get(r.hid).name;
+      },
+      // what to draw on the map for the selected NPA: a line to the nearest hospital and a ring on it
+      overlayFor: function (id) {
+        var r = results.get(id);
+        return r ? { line: r.hid, rings: [r.hid] } : { line: null, rings: [] };
+      },
+      appendDetail: function (box, p) {
+        box.appendChild(el("p", "detail-sub", "Nearest hospital"));
+        var r = results.get(p.id);
+        if (!r) {
+          box.appendChild(el("p", "placeholder", "No hospital included in this analysis"));
+          return;
+        }
+        var h = hospitals.get(r.hid);
+        box.appendChild(detailList([
+          { label: "Name", value: h.name },
+          { label: "Type", value: sentence(h.type) + " · " + sentence(h.status) },
+          { label: "Beds", value: h.beds === null ? null : fmt(h.beds) },
+          { label: sentence(IMPEDANCE_LABELS[settings.impedance]), value: fmtCost(r.cost, fb.unit), active: true },
+        ]));
+        box.appendChild(el("p", "legend-note", "Line on the map is straight, not the route."));
+      },
+    };
+  }
+
+  // Container: hospitals (or beds) located inside the NPA boundary. No distance is used.
+  function makeContainerLayer(settings, results) {
+    var cls = Access.containerClasses(settings.measure);
+    var isCount = settings.measure === "count";
+    // four classes keep the two ends and the middle of the five-colour ramp (light = none, dark = most)
+    var colors = cls.labels.length === 4 ? [YLGN[0], YLGN[1], YLGN[2], YLGN[4]] : YLGN;
+    return {
+      kind: "access",
+      settings: settings,
+      results: results,
+      unit: cls.unit,
+      colors: colors,
+      valueOf: function (p) {
+        var r = results.get(p.id);
+        return r ? (isCount ? r.n : r.beds) : null;
+      },
+      classOf: function (v) { return Access.classifyFixed(v, cls.breaks); },
+      title: "Container: " + (isCount ? "number of hospitals" : "number of beds"),
+      sub: "Fixed classes · hospitals inside each NPA · " + cls.unit,
+      labelFor: function (i) { return cls.labels[i]; },
+      note: "Darker green = more = better access. Class upper bounds are inclusive. People = 2020 population. Hospitals outside every NPA are not counted.",
+      showPop: true,
+      tooltipLine: function (p) {
+        var r = results.get(p.id);
+        if (!r || r.n === 0) return "No hospital inside";
+        return r.n + (r.n === 1 ? " hospital" : " hospitals") + " · " + fmt(r.beds) + " beds" +
+          (r.bedsMissing ? " (+" + r.bedsMissing + " without bed count)" : "");
+      },
+      overlayFor: function (id) {
+        var r = results.get(id);
+        return { line: null, rings: r ? r.hids : [] };
+      },
+      appendDetail: function (box, p) {
+        box.appendChild(el("p", "detail-sub", "Hospitals in this NPA"));
+        var r = results.get(p.id);
+        if (!r || r.n === 0) {
+          box.appendChild(el("p", "placeholder", "No hospital inside this NPA"));
+          return;
+        }
+        box.appendChild(detailList([
+          { label: "Hospitals", value: String(r.n), active: isCount },
+          { label: "Beds", value: fmt(r.beds), active: !isCount },
+        ]));
+        box.appendChild(detailList(r.hids.map(function (hid) {
+          var h = hospitals.get(hid);
+          return { label: h.name, value: h.beds === null ? null : fmt(h.beds) + " beds" };
+        })));
+        if (r.bedsMissing) box.appendChild(el("p", "legend-note", r.bedsMissing + " hospital(s) without a bed count are left out of the bed total."));
       },
     };
   }
@@ -195,7 +269,9 @@
     box.appendChild(el("p", "legend-title", current.title));
     box.appendChild(el("p", "legend-sub", current.sub));
 
-    var counts = [0, 0, 0, 0, 0], pops = [0, 0, 0, 0, 0], missing = 0, missingPop = 0;
+    var counts = current.colors.map(function () { return 0; });
+    var pops = current.colors.map(function () { return 0; });
+    var missing = 0, missingPop = 0;
     npaFeatures.forEach(function (f) {
       var v = current.valueOf(f.properties);
       var pop = f.properties.pop_2020 || 0;
@@ -248,22 +324,7 @@
       return { label: ind.label, value: formatValue(ind, p[ind.key]), active: !!current && current.kind === "indicator" && current.ind === ind };
     })));
 
-    if (current && current.kind === "access") {
-      box.appendChild(el("p", "detail-sub", "Nearest hospital"));
-      var r = current.results.get(p.id);
-      if (!r) {
-        box.appendChild(el("p", "placeholder", "No hospital included in this analysis"));
-        return;
-      }
-      var h = hospitals.get(r.hid);
-      box.appendChild(detailList([
-        { label: "Name", value: h.name },
-        { label: "Type", value: sentence(h.type) + " · " + sentence(h.status) },
-        { label: "Beds", value: h.beds === null ? null : fmt(h.beds) },
-        { label: sentence(IMPEDANCE_LABELS[current.settings.impedance]), value: fmtCost(r.cost, current.unit), active: true },
-      ]));
-      box.appendChild(el("p", "legend-note", "Line on the map is straight, not the route."));
-    }
+    if (current && current.kind === "access") current.appendDetail(box, p);
   }
 
   function tooltipFor(layer) {
@@ -279,20 +340,27 @@
   map.getPane("links").style.zIndex = 445; // above polygons, below hospital markers
   var linkGroup = L.layerGroup().addTo(map);
 
+  // Draws, for the selected NPA, the hospitals the active result links it to:
+  // a ring on each, and (closest facility only) a straight line to the nearest one.
   function updateLink() {
     linkGroup.clearLayers();
-    var drawn = false;
+    var line = false, ring = false;
     if (selected && current && current.kind === "access") {
-      var r = current.results.get(selected.feature.properties.id);
-      var marker = r && hospMarkers.get(r.hid);
-      if (marker) {
-        var to = marker.getLatLng();
-        L.polyline([selected.getCenter(), to], { pane: "links", color: "#0d2f4a", weight: 2, dashArray: "5 4", interactive: false }).addTo(linkGroup);
-        L.circleMarker(to, { pane: "hospitals", radius: hospitalRadius(hospitals.get(r.hid).beds) + 5, color: "#0d2f4a", weight: 3, fill: false, interactive: false }).addTo(linkGroup);
-        drawn = true;
+      var ov = current.overlayFor(selected.feature.properties.id);
+      ov.rings.forEach(function (hid) {
+        var marker = hospMarkers.get(hid);
+        if (!marker) return;
+        L.circleMarker(marker.getLatLng(), { pane: "hospitals", radius: hospitalRadius(hospitals.get(hid).beds) + 5, color: "#0d2f4a", weight: 3, fill: false, interactive: false }).addTo(linkGroup);
+        ring = true;
+      });
+      var target = ov.line && hospMarkers.get(ov.line);
+      if (target) {
+        L.polyline([selected.getCenter(), target.getLatLng()], { pane: "links", color: "#0d2f4a", weight: 2, dashArray: "5 4", interactive: false }).addTo(linkGroup);
+        line = true;
       }
     }
-    byId("legend-link").hidden = !drawn;
+    byId("legend-link").hidden = !line;
+    byId("legend-ring").hidden = !ring;
   }
 
   function clearSelection() {
@@ -445,10 +513,12 @@
   // Accessibility panel: choose settings, then press Apply
   // =====================================================================
   var odByNpa = null;
+  var hospFeatures = [];
   var accessLayer = null;
   var appliedKey = null;
 
   var selMethod = byId("sel-method");
+  var selMeasure = byId("sel-measure");
   var selNetwork = byId("sel-network");
   var selImpedance = byId("sel-impedance");
   var chkClosed = byId("chk-closed");
@@ -462,6 +532,7 @@
   function readSettings() {
     return {
       method: selMethod.value,
+      measure: selMeasure.value,
       basis: selNetwork.value,
       impedance: selImpedance.value,
       includeClosed: chkClosed.checked,
@@ -469,29 +540,45 @@
     };
   }
 
+  // Container does not use distance basis or impedance, so they are left out of its key.
   function settingsKey(s) {
-    return JSON.stringify([s.method, s.basis, s.impedance, s.includeClosed, s.types.slice().sort()]);
+    var core = s.method === "container" ? [s.method, s.measure] : [s.method, s.basis, s.impedance];
+    return JSON.stringify(core.concat([s.includeClosed, s.types.slice().sort()]));
   }
 
   function describe(s) {
+    if (s.method === "container") return "Container · " + (s.measure === "count" ? "number of hospitals" : "number of beds");
     return METHOD_LABELS[s.method] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
+  }
+
+  // What is still unchosen before Apply can run, or null when the form is complete.
+  function missingChoice(s) {
+    if (!s.method) return "Select a method";
+    if (s.method === "container") return s.measure ? null : "Select a container measure";
+    var gaps = [];
+    if (!s.basis) gaps.push("distance basis");
+    if (!s.impedance) gaps.push("travel impedance");
+    return gaps.length ? "Select " + gaps.join(" and ") : null;
   }
 
   function updateHint() {
     var s = readSettings();
-    var msg = "";
+    var gap = missingChoice(s);
+    var changed = appliedKey !== null && !gap && settingsKey(s) !== appliedKey;
+    var msg;
     var enabled = true;
-    if (!odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    if (gap) { msg = gap + ", then press Apply."; enabled = false; }
     else if (s.types.length === 0) { msg = "Select at least one hospital type."; enabled = false; }
-    else if (appliedKey === null) msg = "Choose settings, then press Apply.";
-    else if (settingsKey(s) !== appliedKey) msg = "Settings changed. Press Apply to update the map.";
+    else if (s.method === "closest" && !odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    else if (appliedKey === null) msg = "Press Apply to show the result.";
+    else if (changed) msg = "Settings changed. Press Apply to update the map.";
     else msg = "Showing: " + describe(s);
     var n = 0;
     hospitals.forEach(function (h) { if ((h.status === "OPEN" || s.includeClosed) && s.types.indexOf(h.type) >= 0) n += 1; });
     byId("hosp-count").textContent = "(" + n + " of " + hospitals.size + ")";
     btnApply.disabled = !enabled;
     hint.textContent = msg;
-    hint.classList.toggle("is-pending", enabled && appliedKey !== null && settingsKey(s) !== appliedKey);
+    hint.classList.toggle("is-pending", enabled && changed);
   }
 
   // Travel time exists only for the road network, so Euclidean forces travel distance.
@@ -503,14 +590,27 @@
     if (euclid && selImpedance.value === "time") selImpedance.value = "distance";
   }
 
+  // Container needs a container measure instead of distance basis and impedance.
+  function syncMethod() {
+    var container = selMethod.value === "container";
+    byId("field-measure").hidden = !container;
+    byId("method-note").hidden = !container;
+    selNetwork.disabled = container;
+    selImpedance.disabled = container;
+  }
+
   function apply() {
     var s = readSettings();
+    if (missingChoice(s)) return;
     var included = new Set();
     hospitals.forEach(function (p, hid) {
       if ((p.status === "OPEN" || s.includeClosed) && s.types.indexOf(p.type) >= 0) included.add(hid);
     });
-    var results = Access.closestFacility(odByNpa, included, s.basis, s.impedance);
-    accessLayer = makeAccessLayer(s, results);
+    if (s.method === "container") {
+      accessLayer = makeContainerLayer(s, Access.container(npaFeatures, hospFeatures, included));
+    } else {
+      accessLayer = makeClosestLayer(s, Access.closestFacility(odByNpa, included, s.basis, s.impedance));
+    }
 
     supplyIncluded = included;
     refreshHospitalStyles();
@@ -526,6 +626,7 @@
 
   function initAccessPanel(hospitalFeatures, od) {
     odByNpa = od;
+    hospFeatures = hospitalFeatures;
     var counts = {};
     hospitalFeatures.forEach(function (f) { counts[f.properties.type] = (counts[f.properties.type] || 0) + 1; });
     var box = byId("type-filters");
@@ -540,9 +641,11 @@
       label.appendChild(document.createTextNode(" " + sentence(t) + " (" + counts[t] + ")"));
       box.appendChild(label);
     });
-    [selMethod, selImpedance, chkClosed].forEach(function (c) { c.addEventListener("change", updateHint); });
+    [selMeasure, selImpedance, chkClosed].forEach(function (c) { c.addEventListener("change", updateHint); });
+    selMethod.addEventListener("change", function () { syncMethod(); updateHint(); });
     selNetwork.addEventListener("change", function () { syncImpedance(); updateHint(); });
     btnApply.addEventListener("click", apply);
+    syncMethod();
     syncImpedance();
     updateHint();
   }

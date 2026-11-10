@@ -30,26 +30,38 @@
           <label class="field">
             <span>Method</span>
             <select id="sel-method">
-              <option value="closest" selected>Closest facility</option>
-              <option value="container" disabled>Container (coming soon)</option>
+              <option value="" selected disabled>Select method</option>
+              <option value="closest">Closest facility</option>
+              <option value="container">Container</option>
               <option value="gravity" disabled>Gravity (coming soon)</option>
               <option value="2sfca" disabled>2SFCA (coming soon)</option>
+            </select>
+          </label>
+          <label class="field" id="field-measure" hidden>
+            <span>Container measure</span>
+            <select id="sel-measure">
+              <option value="" selected disabled>Select container measure</option>
+              <option value="count">Number of hospitals</option>
+              <option value="beds">Number of beds</option>
             </select>
           </label>
           <label class="field">
             <span>Distance basis</span>
             <select id="sel-network">
-              <option value="network" selected>Road network</option>
+              <option value="" selected disabled>Select distance basis</option>
+              <option value="network">Road network</option>
               <option value="euclid">Euclidean</option>
             </select>
           </label>
           <label class="field">
             <span>Travel impedance</span>
             <select id="sel-impedance">
-              <option value="time" selected>Travel time</option>
+              <option value="" selected disabled>Select travel impedance</option>
+              <option value="time">Travel time</option>
               <option value="distance">Travel distance</option>
             </select>
           </label>
+          <p id="method-note" class="field-note" hidden>Container counts the hospitals inside each NPA boundary, so distance basis and travel impedance are not used.</p>
           <details class="hosp-filter">
             <summary>Hospitals included <span id="hosp-count" class="muted"></span></summary>
             <label class="check"><input type="checkbox" id="chk-closed"> Closed hospitals</label>
@@ -81,6 +93,7 @@
               <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
               <li id="legend-hosp-excluded" hidden><span class="sw sw-hosp-excluded"></span>Hospital (not included)</li>
               <li id="legend-link" hidden><span class="sw sw-link"></span>Nearest hospital (straight line)</li>
+            <li id="legend-ring" hidden><span class="sw sw-ring"></span>Hospital linked to the selected NPA</li>
             </ul>
             <p class="legend-note">Circle area increases with bed count; no bed count = smallest size.</p>
           </div>
