@@ -254,6 +254,47 @@
     return { byNpa: out, ratio: ratio1000 };
   }
 
+  // ---------------------------------------------------------------------
+  // Hospital catchment for the distance-decay methods: the NPAs whose weight f(d) for hospital hid is > 0.
+  // Returns [{ npaId, cost, f }].
+  // ---------------------------------------------------------------------
+  function catchment(byNpa, hid, basis, impedance, opts) {
+    var key = costKey(basis, impedance);
+    var out = [];
+    byNpa.forEach(function (rows, npaId) {
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].hid !== hid) continue;
+        var f = decay(opts.kind, rows[i][key], opts.d0, opts.beta);
+        if (f > 0) out.push({ npaId: npaId, cost: rows[i][key], f: f });
+        return;
+      }
+    });
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // Population-weighted statistics. items: [{ v, w }] (value, weight).
+  //   mean   = sum(w v) / sum(w)
+  //   median = the smallest value at which the cumulative weight reaches half of the total
+  //   within(x) = weight of the items with v <= x
+  // ---------------------------------------------------------------------
+  function weightedStats(items) {
+    var total = 0, sum = 0;
+    items.forEach(function (it) { total += it.w; sum += it.w * it.v; });
+    var sorted = items.slice().sort(function (a, b) { return a.v - b.v; });
+    var cum = 0, median = null;
+    for (var i = 0; i < sorted.length; i++) {
+      cum += sorted[i].w;
+      if (cum >= total / 2) { median = sorted[i].v; break; }
+    }
+    return {
+      total: total,
+      mean: total > 0 ? sum / total : null,
+      median: total > 0 ? median : null,
+      within: function (x) { var w = 0; items.forEach(function (it) { if (it.v <= x) w += it.w; }); return w; },
+    };
+  }
+
   // Linear-interpolation percentile of an ascending array (numpy.percentile default).
   function percentile(sorted, p) {
     var k = (sorted.length - 1) * p / 100;
@@ -288,6 +329,8 @@
     gravity: gravity,
     sfca: sfca,
     quantiles: quantiles,
+    catchment: catchment,
+    weightedStats: weightedStats,
     container: container,
     containerClasses: containerClasses,
     parseOD: parseOD,

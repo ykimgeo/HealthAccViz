@@ -120,7 +120,8 @@
               <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
               <li id="legend-hosp-excluded" hidden><span class="sw sw-hosp-excluded"></span>Hospital (not included)</li>
               <li id="legend-link" hidden><span class="sw sw-link"></span>Nearest hospital (straight line)</li>
-            <li id="legend-ring" hidden><span class="sw sw-ring"></span>Hospital linked to the selected NPA</li>
+            <li id="legend-ring" hidden><span class="sw sw-ring"></span><span id="legend-ring-text">Hospital linked to the selected NPA</span></li>
+              <li id="legend-served" hidden><span class="sw sw-served"></span><span id="legend-served-text"></span></li>
             </ul>
             <p class="legend-note">Circle area increases with bed count; no bed count = smallest size.</p>
           </div>
@@ -130,15 +131,15 @@
       <aside class="col col-right" aria-label="Charts and details">
         <section class="card" id="panel-summary">
           <h2>Summary</h2>
-          <p class="placeholder">Summary statistics</p>
+          <div id="summary-body"><p class="placeholder">Apply an accessibility measure to see population-weighted statistics.</p></div>
         </section>
         <section class="card" id="panel-charts">
           <h2>Charts</h2>
           <p class="placeholder">Ranking and scatter plot</p>
         </section>
         <section class="card" id="panel-detail">
-          <h2>Selected NPA</h2>
-          <div id="npa-detail"><p class="placeholder">Click an area on the map</p></div>
+          <h2>Selection</h2>
+          <div id="npa-detail"><p class="placeholder">Click an area or a hospital on the map</p></div>
         </section>
       </aside>
     </section>

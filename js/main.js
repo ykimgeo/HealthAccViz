@@ -76,6 +76,9 @@
   var npaLayer = null;
   var npaFeatures = [];
   var selected = null;
+  var selectedHosp = null;   // hid of the selected hospital (never together with a selected NPA)
+  var highlightIds = null;   // Set of NPA ids served by the selected hospital
+  var npaProps = new Map();  // NPA id -> properties
 
   function formatValue(ind, v) {
     if (v === null || v === undefined) return null;
@@ -135,6 +138,28 @@
     return unit === "min" ? fmt(v, { maximumFractionDigits: 0 }) + " min" : v.toFixed(1) + " km";
   }
 
+  // ---------- shared helpers for the selected-hospital view and the Summary card ----------
+  function popOf(id) { var p = npaProps.get(id); return p ? p.pop_2020 || 0 : 0; }
+  function pct(part, whole) { return whole > 0 ? (100 * part / whole).toFixed(1) + "%" : "–"; }
+  function people(n) { return fmt(Math.round(n)); }
+  function share(part, whole) { return pct(part, whole) + " · " + people(part); }
+
+  // Values and populations of the NPAs that have a value in the active layer.
+  function popItems(valueOf) {
+    var items = [], missing = 0, missingPop = 0;
+    npaFeatures.forEach(function (f) {
+      var v = valueOf(f.properties), w = f.properties.pop_2020 || 0;
+      if (v === null || v === undefined) { missing += 1; missingPop += w; } else items.push({ v: v, w: w });
+    });
+    return { items: items, stats: Access.weightedStats(items), missing: missing, missingPop: missingPop };
+  }
+
+  function summaryHead(pi) {
+    var rows = [{ label: "People counted (2020)", value: people(pi.stats.total) }, { label: "NPAs counted", value: String(pi.items.length) }];
+    if (pi.missing) rows.push({ label: "NPAs without a value", value: pi.missing + " · " + people(pi.missingPop) + " people" });
+    return rows;
+  }
+
   // Closest facility: cost (min or km) from the NPA to its nearest included hospital.
   function makeClosestLayer(settings, results) {
     var fb = Access.fixedBreaks(settings.impedance);
@@ -160,6 +185,30 @@
         var r = results.get(p.id);
         if (!r) return "No hospital included in this analysis";
         return fmtCost(r.cost, fb.unit) + " · " + hospitals.get(r.hid).name;
+      },
+      summary: function () {
+        var pi = popItems(function (p) { return results.has(p.id) ? results.get(p.id).cost : null; });
+        var st = pi.stats, rows = summaryHead(pi);
+        function c(v) { return v.toFixed(1) + " " + fb.unit; }
+        rows.push({ label: "Mean " + (fb.unit === "min" ? "travel time" : "travel distance"), value: c(st.mean) });
+        rows.push({ label: "Median", value: c(st.median) });
+        b.forEach(function (x) { rows.push({ label: "Within " + x + " " + fb.unit, value: share(st.within(x), st.total) }); });
+        rows.push({ label: "Farther than " + b[b.length - 1] + " " + fb.unit, value: share(st.total - st.within(b[b.length - 1]), st.total) });
+        return { rows: rows, note: "Each NPA counts as many times as it has residents (population-weighted). Percentages are shares of the people counted. The median is the value at which half of those people are reached." };
+      },
+      serviceLegend: "NPA whose nearest hospital is the selected one",
+      serviceOf: function (hid) {
+        var ids = new Set(), pop = 0, w = 0, worst = 0;
+        results.forEach(function (r, id) {
+          if (r.hid !== hid) return;
+          ids.add(id); pop += popOf(id); w += popOf(id) * r.cost; if (r.cost > worst) worst = r.cost;
+        });
+        var rows = [{ label: "NPAs served", value: String(ids.size), active: true }, { label: "People served (2020)", value: people(pop) }];
+        if (ids.size) {
+          rows.push({ label: "Mean " + (fb.unit === "min" ? "travel time" : "travel distance"), value: (w / pop).toFixed(1) + " " + fb.unit });
+          rows.push({ label: "Farthest NPA", value: worst.toFixed(1) + " " + fb.unit });
+        }
+        return { ids: ids, rows: rows, note: ids.size ? "Served = this hospital is the closest included hospital. Mean is weighted by population." : "No NPA has this hospital as its closest one." };
       },
       // what to draw on the map for the selected NPA: a line to the nearest hospital and a ring on it
       overlayFor: function (id) {
@@ -212,6 +261,23 @@
         if (!r || r.n === 0) return "No hospital inside";
         return r.n + (r.n === 1 ? " hospital" : " hospitals") + " · " + fmt(r.beds) + " beds" +
           (r.bedsMissing ? " (+" + r.bedsMissing + " without bed count)" : "");
+      },
+      summary: function () {
+        var pi = popItems(function (p) { var r = results.get(p.id); return r ? (isCount ? r.n : r.beds) : null; });
+        var st = pi.stats, rows = summaryHead(pi);
+        var none = st.within(0);
+        rows.push({ label: "In an NPA with no " + (isCount ? "hospital" : "bed"), value: share(none, st.total) });
+        rows.push({ label: "In an NPA with at least one " + (isCount ? "hospital" : "bed"), value: share(st.total - none, st.total) });
+        rows.push({ label: "Mean " + (isCount ? "hospitals" : "beds") + " in the NPA", value: isCount ? st.mean.toFixed(2) : fmt(Math.round(st.mean)) });
+        return { rows: rows, note: "Population-weighted: each NPA counts as many times as it has residents. Only the NPA that contains a hospital is credited; no distance is used." };
+      },
+      serviceLegend: "NPA containing the selected hospital",
+      serviceOf: function (hid) {
+        var ids = new Set();
+        results.forEach(function (r, id) { if (r.hids.indexOf(hid) >= 0) ids.add(id); });
+        if (!ids.size) return { ids: ids, rows: [], note: "This hospital lies outside every NPA, so it is not counted anywhere." };
+        var id = ids.values().next().value;
+        return { ids: ids, rows: [{ label: "NPA containing it", value: npaProps.get(id).npa_name, active: true }, { label: "People in that NPA (2020)", value: people(popOf(id)) }], note: "Container credits only the NPA that holds the hospital." };
       },
       overlayFor: function (id) {
         var r = results.get(id);
@@ -296,6 +362,34 @@
         var r = results.get(p.id);
         return r ? spec.tip(r.score) : "No data";
       },
+      flat: ei.flat,
+      summary: function () {
+        var pi = popItems(function (p) { var r = results.get(p.id); return r ? r.score : null; });
+        var st = pi.stats, rows = summaryHead(pi);
+        rows.push({ label: "Mean", value: spec.score(st.mean) });
+        rows.push({ label: "Median", value: spec.score(st.median) });
+        if (!ei.flat) {
+          var low = pi.items.filter(function (it) { return Access.classifyFixed(it.v, ei.breaks) === 0; }).reduce(function (s, it) { return s + it.w; }, 0);
+          rows.push({ label: "People in the lowest class", value: share(low, st.total) });
+        }
+        return { rows: rows, note: "Unit: " + spec.unitText + ". Population-weighted: each NPA counts as many times as it has residents. The median is the value at which half of those people are reached. Lowest class = the bottom fifth of NPAs by score." };
+      },
+      serviceLegend: "NPA within the threshold of the selected hospital",
+      serviceOf: function (hid) {
+        var cat = Access.catchment(odByNpa, hid, settings.basis, settings.impedance, { kind: settings.decay, d0: settings.d0, beta: settings.beta });
+        var ids = new Set(), pop = 0, wpop = 0;
+        cat.forEach(function (c) { ids.add(c.npaId); pop += popOf(c.npaId); wpop += popOf(c.npaId) * c.f; });
+        var beds = hospitals.get(hid).beds;
+        var rows = [{ label: "NPAs within threshold", value: String(ids.size), active: true }, { label: "People in those NPAs (2020)", value: people(pop) }, { label: "Beds", value: fmt(beds) }];
+        if (settings.method === "2sfca" && wpop > 0) {
+          rows.push({ label: "People weighted by f(d)", value: people(wpop) });
+          rows.push({ label: "R: beds per 1,000 people", value: (1000 * beds / wpop).toFixed(2) });
+        }
+        var note = !ids.size ? "No NPA lies within the threshold, so this hospital contributes nothing."
+          : settings.method === "2sfca" ? "R = beds ÷ Σ(population × f(d)) over these NPAs, times 1,000. Residents of counties outside Mecklenburg are not counted, so R is overstated for hospitals near the county line."
+          : "Highlighted NPAs have a weight f(d) > 0 for this hospital.";
+        return { ids: ids, rows: rows, note: note };
+      },
       overlayFor: function (id) {
         var r = results.get(id);
         return { line: null, rings: r ? r.top.map(function (t) { return t.hid; }) : [] };
@@ -331,13 +425,18 @@
     if (!current) return NEUTRAL_STYLE;
     var v = current.valueOf(feature.properties);
     var missing = v === null || v === undefined;
-    return {
+    var style = {
       color: "#555555",
       weight: 0.6,
       opacity: 0.9,
       fillColor: missing ? NO_DATA_COLOR : current.colors[current.classOf(v)],
       fillOpacity: missing ? 0.6 : 0.82,
     };
+    if (highlightIds) { // a hospital is selected: outline the NPAs it serves, fade the rest
+      if (highlightIds.has(feature.properties.id)) { style.color = "#0d2f4a"; style.weight = 2.2; style.opacity = 1; }
+      else style.fillOpacity = 0.18;
+    }
+    return style;
   }
 
   function updateLegend() {
@@ -413,6 +512,37 @@
     if (current && current.kind === "access") current.appendDetail(box, p);
   }
 
+  // Detail of the selected hospital, with the NPAs it serves under the active measure.
+  function renderHospSelection() {
+    var box = byId("npa-detail");
+    box.replaceChildren();
+    var p = hospitals.get(selectedHosp);
+    box.appendChild(el("p", "detail-title", p.name));
+    box.appendChild(detailList([
+      { label: "Type", value: sentence(p.type) + " · " + sentence(p.status) },
+      { label: "Beds", value: p.beds === null ? null : fmt(p.beds) },
+      { label: "County", value: sentence(p.county) + ", " + p.state },
+    ]));
+    highlightIds = null;
+    var legendText = null;
+    if (current && current.kind === "access") {
+      box.appendChild(el("p", "detail-sub", METHOD_LABELS[current.settings.method] + ": NPAs served"));
+      if (!supplyIncluded || !supplyIncluded.has(selectedHosp)) {
+        box.appendChild(el("p", "placeholder", "This hospital is not included in the applied analysis."));
+      } else {
+        var svc = current.serviceOf(selectedHosp);
+        highlightIds = svc.ids;
+        legendText = current.serviceLegend;
+        if (svc.rows.length) box.appendChild(detailList(svc.rows));
+        box.appendChild(el("p", "legend-note", svc.note));
+      }
+    } else {
+      box.appendChild(el("p", "placeholder", "Apply an accessibility measure to see the NPAs this hospital serves."));
+    }
+    byId("legend-served-text").textContent = legendText || "";
+    byId("legend-served").hidden = !highlightIds;
+  }
+
   function tooltipFor(layer) {
     var p = layer.feature.properties;
     var box = el("div");
@@ -431,6 +561,13 @@
   function updateLink() {
     linkGroup.clearLayers();
     var line = false, ring = false;
+    byId("legend-ring-text").textContent = "Hospital linked to the selected NPA";
+    if (selectedHosp && hospMarkers.get(selectedHosp)) {
+      var hm = hospMarkers.get(selectedHosp);
+      L.circleMarker(hm.getLatLng(), { pane: "hospitals", radius: hospitalRadius(hospitals.get(selectedHosp).beds) + 5, color: "#0d2f4a", weight: 3, fill: false, interactive: false }).addTo(linkGroup);
+      ring = true;
+      byId("legend-ring-text").textContent = "Selected hospital";
+    }
     if (selected && current && current.kind === "access") {
       var ov = current.overlayFor(selected.feature.properties.id);
       ov.rings.forEach(function (hid) {
@@ -449,15 +586,23 @@
     byId("legend-ring").hidden = !ring;
   }
 
+  function clearHospSelection() {
+    selectedHosp = null;
+    highlightIds = null;
+    byId("legend-served").hidden = true;
+    npaLayer.setStyle(baseStyle);
+  }
+
   function clearSelection() {
-    if (!selected) return;
-    npaLayer.resetStyle(selected);
-    selected = null;
-    byId("npa-detail").replaceChildren(el("p", "placeholder", "Click an area on the map"));
+    if (!selected && !selectedHosp) return;
+    if (selected) { npaLayer.resetStyle(selected); selected = null; }
+    if (selectedHosp) clearHospSelection();
+    byId("npa-detail").replaceChildren(el("p", "placeholder", "Click an area or a hospital on the map"));
     updateLink();
   }
 
   function selectNPA(layer) {
+    if (selectedHosp) clearHospSelection(); // an NPA and a hospital are never selected together
     if (selected) npaLayer.resetStyle(selected);
     selected = layer;
     layer.setStyle(SELECTED_STYLE);
@@ -466,8 +611,31 @@
     updateLink();
   }
 
+  function selectHospital(hid) {
+    if (selected) { npaLayer.resetStyle(selected); selected = null; }
+    selectedHosp = hid;
+    renderHospSelection();
+    npaLayer.setStyle(baseStyle);
+    updateLink();
+  }
+
+  // ---------- Summary card: population-weighted statistics of the active accessibility result ----------
+  function updateSummary() {
+    var box = byId("summary-body");
+    box.replaceChildren();
+    if (!current || current.kind !== "access") {
+      box.appendChild(el("p", "placeholder", "Apply an accessibility measure to see population-weighted statistics."));
+      return;
+    }
+    var s = current.summary();
+    box.appendChild(el("p", "detail-sub summary-title", METHOD_LABELS[current.settings.method]));
+    box.appendChild(detailList(s.rows));
+    box.appendChild(el("p", "legend-note", s.note));
+  }
+
   function setLayer(layer) {
     current = layer;
+    if (selectedHosp) renderHospSelection(); // sets highlightIds for the new layer
     npaLayer.setStyle(baseStyle);
     if (selected) {
       selected.setStyle(SELECTED_STYLE);
@@ -475,6 +643,7 @@
     }
     updateLegend();
     updateLink();
+    updateSummary();
   }
 
   // ---------- choropleth radio list ----------
@@ -509,6 +678,7 @@
 
   function addNPA(geojson) {
     npaFeatures = geojson.features;
+    npaFeatures.forEach(function (f) { npaProps.set(f.properties.id, f.properties); });
     npaLayer = L.geoJSON(geojson, {
       style: baseStyle,
       bubblingMouseEvents: false, // a click on a polygon must not reach the map's own click handler
@@ -583,7 +753,7 @@
         hospitals.set(p.hid, p);
         var m = L.circleMarker(latlng, Object.assign({
           pane: "hospitals",
-          bubblingMouseEvents: false, // clicking a hospital leaves the NPA selection unchanged
+          bubblingMouseEvents: false, // a click on a hospital must not reach the map's own click handler (which clears the selection)
           radius: hospitalRadius(p.beds),
         }, hospitalStyle(p)));
         hospMarkers.set(p.hid, m);
@@ -591,6 +761,7 @@
       },
       onEachFeature: function (feature, layer) {
         layer.bindTooltip(function () { return hospitalTooltip(feature.properties); }, { direction: "top" });
+        layer.on("click", function () { selectHospital(feature.properties.hid); });
       },
     }).addTo(map);
   }
