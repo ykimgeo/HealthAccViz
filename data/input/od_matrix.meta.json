@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-11-10T17:44:18+00:00",
+  "created_utc": "2026-11-10T18:44:30+00:00",
   "mode": "car (free-flow, OSM speeds as used by R5)",
   "origins": "NPA geometric centroids (computed in EPSG:32617)",
   "destinations": "hospitals_input.geojson (all rows, open and closed)",
@@ -16,15 +16,21 @@
   "osm": {
     "nc": {
       "url": "https://download.geofabrik.de/north-america/us/north-carolina-latest.osm.pbf",
+      "osm_data_timestamp": "2026-11-08T21:21:00Z",
       "last_modified_header": null,
-      "downloaded_or_found_utc": "2026-11-10T17:24:43+00:00",
+      "downloaded_this_run": false,
+      "file_modified_utc": "2026-11-10T17:21:21+00:00",
+      "checked_utc": "2026-11-10T18:24:29+00:00",
       "bytes": 430745255,
       "sha256": "ebf05da1233768421902473174c72342fbfd9d01e73962dfdf6c58237e8cf1a0"
     },
     "sc": {
       "url": "https://download.geofabrik.de/north-america/us/south-carolina-latest.osm.pbf",
+      "osm_data_timestamp": "2026-11-08T21:21:00Z",
       "last_modified_header": null,
-      "downloaded_or_found_utc": "2026-11-10T17:24:48+00:00",
+      "downloaded_this_run": false,
+      "file_modified_utc": "2026-11-10T17:22:48+00:00",
+      "checked_utc": "2026-11-10T18:24:33+00:00",
       "bytes": 165963271,
       "sha256": "fe3e0d15679816c3f0d1ccfbe43084eee11de6bb0e515c7a7d9b82c40c990354"
     },
@@ -35,6 +41,7 @@
     "pairs": 13770,
     "pairs_expected": 13770,
     "pairs_missing_network": 0,
+    "pairs_zero_minutes_but_over_1km": 0,
     "npa_centroids_outside_polygon": 0,
     "circuity_ratio_network_over_euclid": {
       "min": 1.037,
