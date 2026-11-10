@@ -13,7 +13,7 @@
   <header class="app-header">
     <div class="app-title">
       <h1>Healthcare Access in Charlotte</h1>
-      <p>Yunsik Kim, PhD Student in Geography, UNC Charlotte</p>
+      <p>Author: Yunsik Kim, PhD Student in Geography, UNC Charlotte</p>
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
       <button class="tab is-active" role="tab" id="tab-dashboard" aria-selected="true" aria-controls="view-dashboard" data-view="dashboard">Dashboard</button>
@@ -49,16 +49,16 @@
             <span>Distance basis</span>
             <select id="sel-network">
               <option value="" selected disabled>Select distance basis</option>
-              <option value="network">Road network</option>
               <option value="euclid">Euclidean</option>
+              <option value="network">Road network</option>
             </select>
           </label>
           <label class="field">
             <span>Travel impedance</span>
             <select id="sel-impedance">
               <option value="" selected disabled>Select travel impedance</option>
-              <option value="time">Travel time</option>
               <option value="distance">Travel distance</option>
+              <option value="time">Travel time</option>
             </select>
           </label>
           <p id="method-note" class="field-note" hidden>Container counts the hospitals inside each NPA boundary, so distance basis and travel impedance are not used.</p>
