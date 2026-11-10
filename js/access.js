@@ -203,6 +203,57 @@
     return out;
   }
 
+  // ---------------------------------------------------------------------
+  // 2SFCA (two-step floating catchment area), with the distance decay f(d) of the Gravity method.
+  //   step 1:  R_j = S_j / sum_k P_k f(d_kj)       beds per person around hospital j
+  //   step 2:  A_i = sum_j R_j f(d_ij)             beds per person for NPA i
+  // With the binary decay this is the original 2SFCA; a continuous f gives the enhanced version.
+  // The score is A_i * 1000 (beds per 1,000 people).
+  // demand: Map npa_id -> population. supply: Map hid -> beds.
+  // A hospital with no demand inside its catchment has no defined R_j and contributes nothing.
+  // Returns { byNpa: Map npa_id -> { score, n, top }, ratio: Map hid -> R_j * 1000 }
+  // where top = the three largest contributions [{ hid, cost, f, w, r }], w = R_j f * 1000, r = R_j * 1000.
+  // ---------------------------------------------------------------------
+  function sfca(byNpa, supply, demand, basis, impedance, opts) {
+    var key = costKey(basis, impedance);
+    var pop = new Map(); // hid -> sum_k P_k f(d_kj)
+    byNpa.forEach(function (rows, npaId) {
+      var p = demand.get(npaId) || 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!supply.has(r.hid)) continue;
+        var f = decay(opts.kind, r[key], opts.d0, opts.beta);
+        if (f > 0) pop.set(r.hid, (pop.get(r.hid) || 0) + p * f);
+      }
+    });
+    var ratio = new Map(); // hid -> R_j (beds per person)
+    supply.forEach(function (beds, hid) {
+      var d = pop.get(hid) || 0;
+      if (d > 0) ratio.set(hid, beds / d);
+    });
+    var out = new Map();
+    byNpa.forEach(function (rows, npaId) {
+      var a = 0, n = 0, contrib = [];
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!supply.has(r.hid)) continue;
+        var c = r[key];
+        if (c <= opts.d0) n += 1;
+        var f = decay(opts.kind, c, opts.d0, opts.beta);
+        if (f > 0 && ratio.has(r.hid)) {
+          var w = ratio.get(r.hid) * f;
+          a += w;
+          contrib.push({ hid: r.hid, cost: c, f: f, w: w * 1000, r: ratio.get(r.hid) * 1000 });
+        }
+      }
+      contrib.sort(function (x, y) { return y.w - x.w || (x.hid < y.hid ? -1 : 1); });
+      out.set(npaId, { score: a * 1000, n: n, top: contrib.slice(0, 3) });
+    });
+    var ratio1000 = new Map();
+    ratio.forEach(function (v, hid) { ratio1000.set(hid, v * 1000); });
+    return { byNpa: out, ratio: ratio1000 };
+  }
+
   // Equal-interval classes over the observed range of a result: k classes, upper bounds of the first k-1.
   function equalIntervals(values, k) {
     var min = Infinity, max = -Infinity;
@@ -215,6 +266,7 @@
   var api = {
     decay: decay,
     gravity: gravity,
+    sfca: sfca,
     equalIntervals: equalIntervals,
     container: container,
     containerClasses: containerClasses,

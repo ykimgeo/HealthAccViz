@@ -125,7 +125,8 @@
   }
 
   // ---------- accessibility result layer ----------
-  var METHOD_LABELS = { closest: "Closest facility", container: "Container", gravity: "Gravity" };
+  var METHOD_LABELS = { closest: "Closest facility", container: "Container", gravity: "Gravity", "2sfca": "2SFCA" };
+  function usesDecay(method) { return method === "gravity" || method === "2sfca"; }
   var DECAY_LABELS = { binary: "Binary", negexp: "Negative exponential", gaussian: "Gaussian" };
   var BASIS_LABELS = { network: "road network", euclid: "Euclidean distance" };
   var IMPEDANCE_LABELS = { time: "travel time", distance: "travel distance" };
@@ -236,16 +237,43 @@
     };
   }
 
-  // Gravity: score = sum_j(beds_j * f(d_ij)), in weighted beds, classed in five equal steps over the
+  // Gravity and 2SFCA share one layer builder: a score per NPA classed in five equal steps over the
   // observed range of the result (the range moves a lot with the threshold and the decay function,
   // so fixed class bounds would put most NPAs in one class).
-  function makeGravityLayer(settings, results) {
+  //   Gravity: score = sum_j(beds_j * f(d_ij)), in weighted beds
+  //   2SFCA:   score = 1000 * sum_j(R_j * f(d_ij)), in beds per 1,000 people
+  var SCORE_SPECS = {
+    gravity: {
+      title: "Gravity: access score (Σ beds × f(d))",
+      unitText: "weighted beds",
+      noteStart: "Score = Σ(beds × f(d)), the beds of every included hospital weighted by distance decay.",
+      score: function (v) { return fmt(Math.round(v)); },
+      scoreLabel: "Score (weighted beds)",
+      tip: function (v) { return fmt(Math.round(v)) + " weighted beds"; },
+      contribution: function (t) { return "f = " + t.f.toFixed(2); },
+      contributionsTitle: "Largest contributions",
+    },
+    "2sfca": {
+      title: "2SFCA: beds per 1,000 people",
+      unitText: "beds per 1,000 people",
+      noteStart: "Step 1: for each hospital, R = beds ÷ Σ(population × f(d)) of the NPAs around it. Step 2: score = 1,000 × Σ(R × f(d)) over the hospitals around the NPA.",
+      score: function (v) { return v.toFixed(2); },
+      scoreLabel: "Beds per 1,000 people",
+      tip: function (v) { return v.toFixed(2) + " beds per 1,000 people"; },
+      contribution: function (t) { return "f = " + t.f.toFixed(2) + " · R = " + t.r.toFixed(2); },
+      contributionsTitle: "Largest contributions (R = beds per 1,000 people around the hospital)",
+      extraNote: " Hospitals outside Mecklenburg County count as supply, but only Mecklenburg residents are counted as demand, so their R is overstated.",
+    },
+  };
+
+  function makeScoreLayer(settings, results) {
+    var spec = SCORE_SPECS[settings.method];
     var vals = [];
     results.forEach(function (r) { vals.push(r.score); });
     var ei = Access.equalIntervals(vals, 5);
     var unit = settings.impedance === "time" ? "min" : "km";
     var span = ei.max - ei.min;
-    var dec = ei.flat ? 0 : span < 5 ? 2 : span < 50 ? 1 : 0; // narrow ranges need decimals to tell classes apart
+    var dec = ei.flat ? (settings.method === "2sfca" ? 2 : 0) : span < 5 ? 2 : span < 50 ? 1 : 0; // narrow ranges need decimals to tell classes apart
     var cfg = DECAY_LABELS[settings.decay] + " · " + BASIS_LABELS[settings.basis] + " · " + IMPEDANCE_LABELS[settings.impedance] +
       " · d0 = " + settings.d0 + " " + unit + (settings.decay === "negexp" ? " · β = " + settings.beta + " /" + unit : "");
     return {
@@ -256,41 +284,40 @@
       colors: YLGN,
       valueOf: function (p) { var r = results.get(p.id); return r ? r.score : null; },
       classOf: function (v) { return ei.flat ? 4 : Access.classifyFixed(v, ei.breaks); },
-      title: "Gravity: access score (Σ beds × f(d))",
-      sub: cfg + " · weighted beds",
+      title: spec.title,
+      sub: cfg + " · " + spec.unitText,
       labelFor: function (i) {
         if (ei.flat) return i === 4 ? ei.max.toFixed(dec) : "—";
         var lo = i === 0 ? ei.min : ei.breaks[i - 1];
         var hi = i < 4 ? ei.breaks[i] : ei.max;
         return lo.toFixed(dec) + " – " + hi.toFixed(dec);
       },
-      note: "Score = Σ(beds × f(d)), the beds of every included hospital weighted by distance decay. Darker green = higher = better access. Five equal steps over the range of this result. Hospitals without a bed count are not in the supply. People = 2020 population." +
-        (ei.flat ? " All NPAs have the same score." : ""),
+      note: spec.noteStart + " Darker green = higher = better access. Five equal steps over the range of this result. Hospitals without a bed count are not in the supply. People = 2020 population." +
+        (spec.extraNote || "") + (ei.flat ? " All NPAs have the same score." : ""),
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
-        if (!r) return "No data";
-        return fmt(Math.round(r.score)) + " weighted beds";
+        return r ? spec.tip(r.score) : "No data";
       },
       overlayFor: function (id) {
         var r = results.get(id);
         return { line: null, rings: r ? r.top.map(function (t) { return t.hid; }) : [] };
       },
       appendDetail: function (box, p) {
-        box.appendChild(el("p", "detail-sub", "Gravity access"));
+        box.appendChild(el("p", "detail-sub", METHOD_LABELS[settings.method] + " access"));
         var r = results.get(p.id);
         if (!r) { box.appendChild(el("p", "placeholder", "No data")); return; }
         box.appendChild(detailList([
-          { label: "Score (weighted beds)", value: fmt(Math.round(r.score)), active: true },
+          { label: spec.scoreLabel, value: spec.score(r.score), active: true },
           { label: "Hospitals within threshold", value: String(r.n) },
         ]));
         if (!r.top.length) {
           box.appendChild(el("p", "placeholder", "No included hospital within the threshold"));
           return;
         }
-        box.appendChild(el("p", "detail-sub", "Largest contributions"));
+        box.appendChild(el("p", "detail-sub", spec.contributionsTitle));
         box.appendChild(detailList(r.top.map(function (t) {
-          return { label: hospitals.get(t.hid).name, value: fmtCost(t.cost, unit) + " · f = " + t.f.toFixed(2) };
+          return { label: hospitals.get(t.hid).name, value: fmtCost(t.cost, unit) + " · " + spec.contribution(t) };
         })));
         box.appendChild(el("p", "legend-note", "Rings on the map mark these hospitals."));
       },
@@ -611,14 +638,14 @@
   function settingsKey(s) {
     var core;
     if (s.method === "container") core = [s.method, s.measure];
-    else if (s.method === "gravity") core = [s.method, s.basis, s.impedance, s.decay, s.d0, s.decay === "negexp" ? s.beta : null];
+    else if (usesDecay(s.method)) core = [s.method, s.basis, s.impedance, s.decay, s.d0, s.decay === "negexp" ? s.beta : null];
     else core = [s.method, s.basis, s.impedance];
     return JSON.stringify(core.concat([s.includeClosed, s.types.slice().sort()]));
   }
 
   function describe(s) {
     if (s.method === "container") return "Container · " + (s.measure === "count" ? "number of hospitals" : "number of beds");
-    if (s.method === "gravity") return "Gravity · " + DECAY_LABELS[s.decay] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
+    if (usesDecay(s.method)) return METHOD_LABELS[s.method] + " · " + DECAY_LABELS[s.decay] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
     return METHOD_LABELS[s.method] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
   }
 
@@ -629,7 +656,7 @@
     var gaps = [];
     if (!s.basis) gaps.push("distance basis");
     if (!s.impedance) gaps.push("travel impedance");
-    if (s.method === "gravity" && !s.decay) gaps.push("distance decay function");
+    if (usesDecay(s.method) && !s.decay) gaps.push("distance decay function");
     if (!gaps.length) return null;
     return "Select " + (gaps.length === 1 ? gaps[0] : gaps.slice(0, -1).join(", ") + " and " + gaps[gaps.length - 1]);
   }
@@ -642,8 +669,8 @@
     var enabled = true;
     if (gap) { msg = gap + ", then press Apply."; enabled = false; }
     else if (s.types.length === 0) { msg = "Select at least one hospital type."; enabled = false; }
-    else if ((s.method === "closest" || s.method === "gravity") && !odByNpa) { msg = "OD matrix not available."; enabled = false; }
-    else if (s.method === "gravity" && gravitySupplyCount(s) === 0) { msg = "No included hospital has a bed count."; enabled = false; }
+    else if ((s.method !== "container") && !odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    else if (usesDecay(s.method) && gravitySupplyCount(s) === 0) { msg = "No included hospital has a bed count."; enabled = false; }
     else if (appliedKey === null) msg = "Press Apply to show the result.";
     else if (changed) msg = "Settings changed. Press Apply to update the map.";
     else msg = "Showing: " + describe(s);
@@ -767,7 +794,7 @@
   // Show the pieces each method needs.
   function syncMethod() {
     var m = selMethod.value;
-    var container = m === "container", gravityOn = m === "gravity";
+    var container = m === "container", gravityOn = usesDecay(m);
     byId("field-measure").hidden = !container;
     byId("method-note").hidden = !container;
     byId("field-decay").hidden = !gravityOn;
@@ -779,7 +806,7 @@
   function syncGravity() {
     var m = selMethod.value;
     var imp = selImpedance.value;
-    var show = m === "gravity" && !!imp && !!selDecay.value;
+    var show = usesDecay(m) && !!imp && !!selDecay.value;
     byId("gravity-params").hidden = !show;
     byId("gp-beta-block").hidden = selDecay.value !== "negexp";
     if (!show) return;
@@ -805,11 +832,20 @@
     var counted = included; // hospitals that actually enter the calculation
     if (s.method === "container") {
       accessLayer = makeContainerLayer(s, Access.container(npaFeatures, hospFeatures, included));
-    } else if (s.method === "gravity") {
+    } else if (usesDecay(s.method)) {
       // supply = beds, so a hospital without a bed count cannot be part of it
       var supply = new Map();
       included.forEach(function (hid) { var b = hospitals.get(hid).beds; if (b !== null) supply.set(hid, b); });
-      accessLayer = makeGravityLayer(s, Access.gravity(odByNpa, supply, s.basis, s.impedance, { kind: s.decay, d0: s.d0, beta: s.beta }));
+      var opts = { kind: s.decay, d0: s.d0, beta: s.beta };
+      var results;
+      if (s.method === "gravity") {
+        results = Access.gravity(odByNpa, supply, s.basis, s.impedance, opts);
+      } else {
+        var demand = new Map();
+        npaFeatures.forEach(function (f) { demand.set(f.properties.id, f.properties.pop_2020 || 0); });
+        results = Access.sfca(odByNpa, supply, demand, s.basis, s.impedance, opts).byNpa;
+      }
+      accessLayer = makeScoreLayer(s, results);
       counted = new Set(supply.keys());
     } else {
       accessLayer = makeClosestLayer(s, Access.closestFacility(odByNpa, included, s.basis, s.impedance));
