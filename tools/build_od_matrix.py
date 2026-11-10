@@ -113,9 +113,10 @@ def load_inputs(npa_path, hosp_path, limit_npa):
         npa = npa.iloc[:limit_npa].copy()
 
     # geometric centroids computed in a projected CRS
-    cen = npa.to_crs(UTM).centroid
+    poly_utm = npa.to_crs(UTM).geometry
+    cen = poly_utm.centroid
     npa_pts = gpd.GeoDataFrame({"npa_id": npa["id"].astype(str).values}, geometry=cen.to_crs("EPSG:4326").values, crs="EPSG:4326")
-    n_outside = int((~cen.within(npa.to_crs(UTM).geometry.values)).sum())
+    n_outside = int((~cen.within(poly_utm)).sum())  # both are GeoSeries with the same index
     log(f"  {len(npa_pts)} NPA centroids ({n_outside} fall outside their own polygon)")
 
     hosp_pts = gpd.GeoDataFrame({"hid": hosp["hid"].astype(str).values}, geometry=hosp.geometry.values, crs="EPSG:4326")
