@@ -154,7 +154,69 @@
     throw new Error("Unknown container measure: " + measure);
   }
 
+  // ---------------------------------------------------------------------
+  // Gravity: A_i = sum_j S_j * f(d_ij), S_j = beds of hospital j.
+  // The score is expressed as a share of all supplied beds, so it runs from 0 to 100 whatever
+  // the decay function: score_i = 100 * A_i / sum_j S_j.
+  // ---------------------------------------------------------------------
+  // Distance decay f(d). d0 is the threshold: f is 0 beyond it.
+  //   binary:      1 up to d0
+  //   negexp:      exp(-beta * d)                       (beta in 1 / cost unit)
+  //   gaussian:    [exp(-1/2 (d/d0)^2) - exp(-1/2)] / [1 - exp(-1/2)]   (equals 1 at 0 and 0 at d0)
+  var E_HALF = Math.exp(-0.5);
+  function decay(kind, d, d0, beta) {
+    if (d > d0) return 0;
+    if (kind === "binary") return 1;
+    if (kind === "negexp") return Math.exp(-beta * d);
+    if (kind === "gaussian") {
+      var u = d / d0;
+      return (Math.exp(-0.5 * u * u) - E_HALF) / (1 - E_HALF);
+    }
+    throw new Error("Unknown decay function: " + kind);
+  }
+
+  // supply: Map hid -> beds (only hospitals that count, all with a bed count).
+  // Returns Map npa_id -> { score, wbeds, n, top } where wbeds = sum S_j f(d_ij), n = hospitals within d0,
+  // top = the three largest contributions [{ hid, cost, f, w }].
+  function gravity(byNpa, supply, basis, impedance, opts) {
+    var key = costKey(basis, impedance);
+    var total = 0;
+    supply.forEach(function (beds) { total += beds; });
+    if (!(total > 0)) throw new Error("No included hospital has a bed count");
+    var out = new Map();
+    byNpa.forEach(function (rows, npaId) {
+      var w = 0, n = 0, contrib = [];
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!supply.has(r.hid)) continue;
+        var d = r[key];
+        if (d <= opts.d0) n += 1;
+        var f = decay(opts.kind, d, opts.d0, opts.beta);
+        if (f > 0) {
+          var c = supply.get(r.hid) * f;
+          w += c;
+          contrib.push({ hid: r.hid, cost: d, f: f, w: c });
+        }
+      }
+      contrib.sort(function (a, b) { return b.w - a.w || (a.hid < b.hid ? -1 : 1); });
+      out.set(npaId, { score: (100 * w) / total, wbeds: w, n: n, top: contrib.slice(0, 3) });
+    });
+    return out;
+  }
+
+  // Equal-interval classes over the observed range of a result: k classes, upper bounds of the first k-1.
+  function equalIntervals(values, k) {
+    var min = Infinity, max = -Infinity;
+    values.forEach(function (v) { if (v < min) min = v; if (v > max) max = v; });
+    var breaks = [];
+    for (var i = 1; i < k; i++) breaks.push(min + ((max - min) * i) / k);
+    return { min: min, max: max, breaks: breaks, flat: max - min < 1e-9 };
+  }
+
   var api = {
+    decay: decay,
+    gravity: gravity,
+    equalIntervals: equalIntervals,
     container: container,
     containerClasses: containerClasses,
     parseOD: parseOD,

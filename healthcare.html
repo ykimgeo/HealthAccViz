@@ -33,7 +33,7 @@
               <option value="" selected disabled>Select method</option>
               <option value="closest">Closest facility</option>
               <option value="container">Container</option>
-              <option value="gravity" disabled>Gravity (coming soon)</option>
+              <option value="gravity">Gravity</option>
               <option value="2sfca" disabled>2SFCA (coming soon)</option>
             </select>
           </label>
@@ -61,6 +61,33 @@
               <option value="time">Travel time</option>
             </select>
           </label>
+          <label class="field" id="field-decay" hidden>
+            <span>Distance decay function</span>
+            <select id="sel-decay">
+              <option value="" selected disabled>Select distance decay function</option>
+              <option value="binary">Binary</option>
+              <option value="negexp">Negative exponential</option>
+              <option value="gaussian">Gaussian</option>
+            </select>
+          </label>
+          <div id="gravity-params" class="params" hidden>
+            <div class="param">
+              <div class="param-head"><label for="gp-d0-num">Threshold (d<sub>0</sub>)</label><span class="param-unit" id="gp-d0-unit"></span></div>
+              <div class="param-row">
+                <input type="range" id="gp-d0-range" aria-label="Threshold slider">
+                <input type="number" id="gp-d0-num" class="num" inputmode="decimal">
+              </div>
+            </div>
+            <div class="param" id="gp-beta-block" hidden>
+              <div class="param-head"><label for="gp-beta-num">Decay coefficient (&beta;)</label><span class="param-unit" id="gp-beta-unit"></span></div>
+              <div class="param-row">
+                <input type="range" id="gp-beta-range" aria-label="Beta slider">
+                <input type="number" id="gp-beta-num" class="num" inputmode="decimal">
+              </div>
+              <p class="param-note" id="gp-beta-half"></p>
+            </div>
+            <svg id="decay-preview" class="decay-preview" viewBox="0 0 240 100" role="img" aria-label="Distance decay curve preview"></svg>
+          </div>
           <p id="method-note" class="field-note" hidden>Container counts the hospitals inside each NPA boundary, so distance basis and travel impedance are not used.</p>
           <details class="hosp-filter">
             <summary>Hospitals included <span id="hosp-count" class="muted"></span></summary>

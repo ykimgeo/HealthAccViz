@@ -125,7 +125,8 @@
   }
 
   // ---------- accessibility result layer ----------
-  var METHOD_LABELS = { closest: "Closest facility", container: "Container" };
+  var METHOD_LABELS = { closest: "Closest facility", container: "Container", gravity: "Gravity" };
+  var DECAY_LABELS = { binary: "Binary", negexp: "Negative exponential", gaussian: "Gaussian" };
   var BASIS_LABELS = { network: "road network", euclid: "Euclidean distance" };
   var IMPEDANCE_LABELS = { time: "travel time", distance: "travel distance" };
 
@@ -231,6 +232,67 @@
           return { label: h.name, value: h.beds === null ? null : fmt(h.beds) + " beds" };
         })));
         if (r.bedsMissing) box.appendChild(el("p", "legend-note", r.bedsMissing + " hospital(s) without a bed count are left out of the bed total."));
+      },
+    };
+  }
+
+  // Gravity: score = 100 * sum_j(beds_j * f(d_ij)) / all included beds, classed in five equal steps
+  // over the observed range of the result (a fixed 0-100 scale would put most NPAs in one class,
+  // because the spread of scores moves a lot with the threshold and the decay function).
+  function makeGravityLayer(settings, results) {
+    var vals = [];
+    results.forEach(function (r) { vals.push(r.score); });
+    var ei = Access.equalIntervals(vals, 5);
+    var unit = settings.impedance === "time" ? "min" : "km";
+    var dec = !ei.flat && ei.max - ei.min < 5 ? 2 : 1; // narrow ranges need a second decimal to tell classes apart
+    var cfg = DECAY_LABELS[settings.decay] + " · " + BASIS_LABELS[settings.basis] + " · " + IMPEDANCE_LABELS[settings.impedance] +
+      " · d0 = " + settings.d0 + " " + unit + (settings.decay === "negexp" ? " · β = " + settings.beta + " /" + unit : "");
+    return {
+      kind: "access",
+      settings: settings,
+      results: results,
+      unit: unit,
+      colors: YLGN,
+      valueOf: function (p) { var r = results.get(p.id); return r ? r.score : null; },
+      classOf: function (v) { return ei.flat ? 4 : Access.classifyFixed(v, ei.breaks); },
+      title: "Gravity: bed-weighted access score",
+      sub: cfg + " · % of included beds",
+      labelFor: function (i) {
+        if (ei.flat) return i === 4 ? ei.max.toFixed(dec) : "—";
+        var lo = i === 0 ? ei.min : ei.breaks[i - 1];
+        var hi = i < 4 ? ei.breaks[i] : ei.max;
+        return lo.toFixed(dec) + " – " + hi.toFixed(dec);
+      },
+      note: "Score = 100 × Σ(beds × f(d)) ÷ all included beds. Darker green = higher = better access. Five equal steps over the range of this result. Hospitals without a bed count are not in the supply. People = 2020 population." +
+        (ei.flat ? " All NPAs have the same score." : ""),
+      showPop: true,
+      tooltipLine: function (p) {
+        var r = results.get(p.id);
+        if (!r) return "No data";
+        return r.score.toFixed(1) + "% · " + fmt(Math.round(r.wbeds)) + " weighted beds";
+      },
+      overlayFor: function (id) {
+        var r = results.get(id);
+        return { line: null, rings: r ? r.top.map(function (t) { return t.hid; }) : [] };
+      },
+      appendDetail: function (box, p) {
+        box.appendChild(el("p", "detail-sub", "Gravity access"));
+        var r = results.get(p.id);
+        if (!r) { box.appendChild(el("p", "placeholder", "No data")); return; }
+        box.appendChild(detailList([
+          { label: "Score", value: r.score.toFixed(1) + "%", active: true },
+          { label: "Weighted beds", value: fmt(Math.round(r.wbeds)) },
+          { label: "Hospitals within threshold", value: String(r.n) },
+        ]));
+        if (!r.top.length) {
+          box.appendChild(el("p", "placeholder", "No included hospital within the threshold"));
+          return;
+        }
+        box.appendChild(el("p", "detail-sub", "Largest contributions"));
+        box.appendChild(detailList(r.top.map(function (t) {
+          return { label: hospitals.get(t.hid).name, value: fmtCost(t.cost, unit) + " · f = " + t.f.toFixed(2) };
+        })));
+        box.appendChild(el("p", "legend-note", "Rings on the map mark these hospitals."));
       },
     };
   }
@@ -521,6 +583,7 @@
   var selMeasure = byId("sel-measure");
   var selNetwork = byId("sel-network");
   var selImpedance = byId("sel-impedance");
+  var selDecay = byId("sel-decay");
   var chkClosed = byId("chk-closed");
   var btnApply = byId("btn-apply");
   var hint = byId("access-hint");
@@ -530,11 +593,15 @@
   }
 
   function readSettings() {
+    var g = gpValue[selImpedance.value] || {};
     return {
       method: selMethod.value,
       measure: selMeasure.value,
       basis: selNetwork.value,
       impedance: selImpedance.value,
+      decay: selDecay.value,
+      d0: g.d0,
+      beta: g.beta,
       includeClosed: chkClosed.checked,
       types: checkedTypes(),
     };
@@ -542,12 +609,16 @@
 
   // Container does not use distance basis or impedance, so they are left out of its key.
   function settingsKey(s) {
-    var core = s.method === "container" ? [s.method, s.measure] : [s.method, s.basis, s.impedance];
+    var core;
+    if (s.method === "container") core = [s.method, s.measure];
+    else if (s.method === "gravity") core = [s.method, s.basis, s.impedance, s.decay, s.d0, s.decay === "negexp" ? s.beta : null];
+    else core = [s.method, s.basis, s.impedance];
     return JSON.stringify(core.concat([s.includeClosed, s.types.slice().sort()]));
   }
 
   function describe(s) {
     if (s.method === "container") return "Container · " + (s.measure === "count" ? "number of hospitals" : "number of beds");
+    if (s.method === "gravity") return "Gravity · " + DECAY_LABELS[s.decay] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
     return METHOD_LABELS[s.method] + " · " + BASIS_LABELS[s.basis] + " · " + IMPEDANCE_LABELS[s.impedance];
   }
 
@@ -558,7 +629,9 @@
     var gaps = [];
     if (!s.basis) gaps.push("distance basis");
     if (!s.impedance) gaps.push("travel impedance");
-    return gaps.length ? "Select " + gaps.join(" and ") : null;
+    if (s.method === "gravity" && !s.decay) gaps.push("distance decay function");
+    if (!gaps.length) return null;
+    return "Select " + (gaps.length === 1 ? gaps[0] : gaps.slice(0, -1).join(", ") + " and " + gaps[gaps.length - 1]);
   }
 
   function updateHint() {
@@ -569,7 +642,8 @@
     var enabled = true;
     if (gap) { msg = gap + ", then press Apply."; enabled = false; }
     else if (s.types.length === 0) { msg = "Select at least one hospital type."; enabled = false; }
-    else if (s.method === "closest" && !odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    else if ((s.method === "closest" || s.method === "gravity") && !odByNpa) { msg = "OD matrix not available."; enabled = false; }
+    else if (s.method === "gravity" && gravitySupplyCount(s) === 0) { msg = "No included hospital has a bed count."; enabled = false; }
     else if (appliedKey === null) msg = "Press Apply to show the result.";
     else if (changed) msg = "Settings changed. Press Apply to update the map.";
     else msg = "Showing: " + describe(s);
@@ -590,13 +664,135 @@
     if (euclid && selImpedance.value === "time") selImpedance.value = "distance";
   }
 
-  // Container needs a container measure instead of distance basis and impedance.
+  // ---- gravity parameters: threshold d0 and beta, each a slider plus a number box ----
+  // Ranges depend on the travel impedance. Threshold: 5-120 min or 2-100 km.
+  // Beta (negative exponential, in 1 per cost unit): 0.01-0.30 /min or 0.01-0.50 /km. With beta = 0.05 /min the
+  // value halves every ln2/beta = 13.9 min, about the median time to the nearest hospital here (12 min);
+  // 0.10 /km halves every 6.9 km (median nearest road distance 7.9 km). Both ends stay usable.
+  var GP = {
+    time: { unit: "min", d0: { min: 5, max: 120, step: 1, def: 30 }, beta: { min: 0.01, max: 0.3, step: 0.005, def: 0.05, unit: "/min" } },
+    distance: { unit: "km", d0: { min: 2, max: 100, step: 1, def: 20 }, beta: { min: 0.01, max: 0.5, step: 0.01, def: 0.1, unit: "/km" } },
+  };
+  // remembered per impedance, so switching time <-> distance and back keeps what was typed
+  var gpValue = { time: { d0: GP.time.d0.def, beta: GP.time.beta.def }, distance: { d0: GP.distance.d0.def, beta: GP.distance.beta.def } };
+  var gpConfigured = null;
+  var d0Range = byId("gp-d0-range"), d0Num = byId("gp-d0-num");
+  var betaRange = byId("gp-beta-range"), betaNum = byId("gp-beta-num");
+
+  function trimNum(v) { return String(Math.round(v * 1000) / 1000); }
+
+  function configureParams(imp) {
+    var cfg = GP[imp];
+    [[d0Range, d0Num, cfg.d0, "d0"], [betaRange, betaNum, cfg.beta, "beta"]].forEach(function (x) {
+      x[0].min = x[1].min = x[2].min;
+      x[0].max = x[1].max = x[2].max;
+      x[0].step = x[2].step;
+      x[1].step = "any";
+      var v = gpValue[imp][x[3]];
+      x[0].value = v;
+      x[1].value = trimNum(v);
+    });
+    byId("gp-d0-unit").textContent = cfg.unit + " (" + cfg.d0.min + "–" + cfg.d0.max + ")";
+    byId("gp-beta-unit").textContent = cfg.beta.unit + " (" + cfg.beta.min + "–" + cfg.beta.max + ")";
+    gpConfigured = imp;
+  }
+
+  function setParam(key, v, source) {
+    var imp = selImpedance.value;
+    gpValue[imp][key] = v;
+    var rng = key === "d0" ? d0Range : betaRange;
+    var num = key === "d0" ? d0Num : betaNum;
+    if (source !== "range") rng.value = v;
+    if (source !== "num") num.value = trimNum(v);
+    drawPreview();
+    updateHint();
+  }
+
+  function bindParam(rng, num, key) {
+    rng.addEventListener("input", function () { setParam(key, parseFloat(rng.value), "range"); });
+    // while typing, accept only values inside the range; clamp when the box is left
+    num.addEventListener("input", function () {
+      var cfg = GP[selImpedance.value][key];
+      var v = parseFloat(num.value);
+      if (isFinite(v) && v >= cfg.min && v <= cfg.max) setParam(key, v, "num");
+    });
+    num.addEventListener("change", function () {
+      var cfg = GP[selImpedance.value][key];
+      var v = parseFloat(num.value);
+      if (!isFinite(v)) v = gpValue[selImpedance.value][key];
+      v = Math.min(cfg.max, Math.max(cfg.min, v));
+      setParam(key, v, "commit");
+      num.value = trimNum(v);
+    });
+  }
+
+  function svgEl(tag, attrs, text) {
+    var e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  // Small plot of f(d) from 0 to a little past the threshold, so the cut-off is visible.
+  function drawPreview() {
+    var svg = byId("decay-preview");
+    svg.replaceChildren();
+    var s = readSettings();
+    if (!s.decay || !GP[s.impedance]) return;
+    var cfg = GP[s.impedance];
+    var X0 = 30, X1 = 232, Y0 = 70, Y1 = 8; // plot box in viewBox units; y grows downward
+    var span = s.d0 * 1.1;
+    function x(d) { return X0 + (d / span) * (X1 - X0); }
+    function y(f) { return Y0 - f * (Y0 - Y1); }
+    var pts = [];
+    for (var i = 0; i <= 120; i++) {
+      var d = (span * i) / 120;
+      pts.push([x(d), y(Access.decay(s.decay, d, s.d0, s.beta))]);
+    }
+    svg.appendChild(svgEl("line", { class: "axis", x1: X0, y1: Y0, x2: X1, y2: Y0 }));
+    svg.appendChild(svgEl("line", { class: "axis", x1: X0, y1: Y1, x2: X0, y2: Y0 }));
+    svg.appendChild(svgEl("polygon", { class: "area", points: [[X0, Y0]].concat(pts, [[x(span), Y0]]).map(function (q) { return q[0].toFixed(1) + "," + q[1].toFixed(1); }).join(" ") }));
+    svg.appendChild(svgEl("polyline", { class: "curve", points: pts.map(function (q) { return q[0].toFixed(1) + "," + q[1].toFixed(1); }).join(" ") }));
+    svg.appendChild(svgEl("text", { x: X0 - 4, y: Y1 + 3, "text-anchor": "end" }, "1"));
+    svg.appendChild(svgEl("text", { x: X0 - 4, y: Y0 + 3, "text-anchor": "end" }, "0"));
+    svg.appendChild(svgEl("text", { x: X0, y: Y0 + 13, "text-anchor": "middle" }, "0"));
+    svg.appendChild(svgEl("line", { class: "axis", x1: x(s.d0), y1: Y0, x2: x(s.d0), y2: Y0 + 3 }));
+    svg.appendChild(svgEl("text", { x: x(s.d0), y: Y0 + 13, "text-anchor": "middle" }, trimNum(s.d0) + " " + cfg.unit));
+    svg.appendChild(svgEl("text", { x: X0, y: 97, "text-anchor": "start" }, "f(d): weight of a hospital at cost d"));
+    if (s.decay === "negexp") {
+      byId("gp-beta-half").textContent = "Weight halves every " + trimNum(Math.LN2 / s.beta) + " " + cfg.unit + " (ln 2 ÷ β).";
+    }
+  }
+
+  // Show the pieces each method needs.
   function syncMethod() {
-    var container = selMethod.value === "container";
+    var m = selMethod.value;
+    var container = m === "container", gravityOn = m === "gravity";
     byId("field-measure").hidden = !container;
     byId("method-note").hidden = !container;
+    byId("field-decay").hidden = !gravityOn;
     selNetwork.disabled = container;
     selImpedance.disabled = container;
+    syncGravity();
+  }
+
+  function syncGravity() {
+    var m = selMethod.value;
+    var imp = selImpedance.value;
+    var show = m === "gravity" && !!imp && !!selDecay.value;
+    byId("gravity-params").hidden = !show;
+    byId("gp-beta-block").hidden = selDecay.value !== "negexp";
+    if (!show) return;
+    if (gpConfigured !== imp) configureParams(imp);
+    drawPreview();
+  }
+
+  function gravitySupplyCount(s) {
+    var n = 0;
+    hospitals.forEach(function (p) {
+      if ((p.status === "OPEN" || s.includeClosed) && s.types.indexOf(p.type) >= 0 && p.beds !== null) n += 1;
+    });
+    return n;
   }
 
   function apply() {
@@ -606,13 +802,20 @@
     hospitals.forEach(function (p, hid) {
       if ((p.status === "OPEN" || s.includeClosed) && s.types.indexOf(p.type) >= 0) included.add(hid);
     });
+    var counted = included; // hospitals that actually enter the calculation
     if (s.method === "container") {
       accessLayer = makeContainerLayer(s, Access.container(npaFeatures, hospFeatures, included));
+    } else if (s.method === "gravity") {
+      // supply = beds, so a hospital without a bed count cannot be part of it
+      var supply = new Map();
+      included.forEach(function (hid) { var b = hospitals.get(hid).beds; if (b !== null) supply.set(hid, b); });
+      accessLayer = makeGravityLayer(s, Access.gravity(odByNpa, supply, s.basis, s.impedance, { kind: s.decay, d0: s.d0, beta: s.beta }));
+      counted = new Set(supply.keys());
     } else {
       accessLayer = makeClosestLayer(s, Access.closestFacility(odByNpa, included, s.basis, s.impedance));
     }
 
-    supplyIncluded = included;
+    supplyIncluded = counted;
     refreshHospitalStyles();
     byId("legend-hosp-excluded").hidden = false;
 
@@ -641,9 +844,13 @@
       label.appendChild(document.createTextNode(" " + sentence(t) + " (" + counts[t] + ")"));
       box.appendChild(label);
     });
-    [selMeasure, selImpedance, chkClosed].forEach(function (c) { c.addEventListener("change", updateHint); });
+    [selMeasure, chkClosed].forEach(function (c) { c.addEventListener("change", updateHint); });
     selMethod.addEventListener("change", function () { syncMethod(); updateHint(); });
-    selNetwork.addEventListener("change", function () { syncImpedance(); updateHint(); });
+    selNetwork.addEventListener("change", function () { syncImpedance(); syncGravity(); updateHint(); });
+    selImpedance.addEventListener("change", function () { syncGravity(); updateHint(); });
+    selDecay.addEventListener("change", function () { syncGravity(); updateHint(); });
+    bindParam(d0Range, d0Num, "d0");
+    bindParam(betaRange, betaNum, "beta");
     btnApply.addEventListener("click", apply);
     syncMethod();
     syncImpedance();
