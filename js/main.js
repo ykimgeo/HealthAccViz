@@ -236,15 +236,16 @@
     };
   }
 
-  // Gravity: score = 100 * sum_j(beds_j * f(d_ij)) / all included beds, classed in five equal steps
-  // over the observed range of the result (a fixed 0-100 scale would put most NPAs in one class,
-  // because the spread of scores moves a lot with the threshold and the decay function).
+  // Gravity: score = sum_j(beds_j * f(d_ij)), in weighted beds, classed in five equal steps over the
+  // observed range of the result (the range moves a lot with the threshold and the decay function,
+  // so fixed class bounds would put most NPAs in one class).
   function makeGravityLayer(settings, results) {
     var vals = [];
     results.forEach(function (r) { vals.push(r.score); });
     var ei = Access.equalIntervals(vals, 5);
     var unit = settings.impedance === "time" ? "min" : "km";
-    var dec = !ei.flat && ei.max - ei.min < 5 ? 2 : 1; // narrow ranges need a second decimal to tell classes apart
+    var span = ei.max - ei.min;
+    var dec = ei.flat ? 0 : span < 5 ? 2 : span < 50 ? 1 : 0; // narrow ranges need decimals to tell classes apart
     var cfg = DECAY_LABELS[settings.decay] + " · " + BASIS_LABELS[settings.basis] + " · " + IMPEDANCE_LABELS[settings.impedance] +
       " · d0 = " + settings.d0 + " " + unit + (settings.decay === "negexp" ? " · β = " + settings.beta + " /" + unit : "");
     return {
@@ -255,21 +256,21 @@
       colors: YLGN,
       valueOf: function (p) { var r = results.get(p.id); return r ? r.score : null; },
       classOf: function (v) { return ei.flat ? 4 : Access.classifyFixed(v, ei.breaks); },
-      title: "Gravity: bed-weighted access score",
-      sub: cfg + " · % of included beds",
+      title: "Gravity: access score (Σ beds × f(d))",
+      sub: cfg + " · weighted beds",
       labelFor: function (i) {
         if (ei.flat) return i === 4 ? ei.max.toFixed(dec) : "—";
         var lo = i === 0 ? ei.min : ei.breaks[i - 1];
         var hi = i < 4 ? ei.breaks[i] : ei.max;
         return lo.toFixed(dec) + " – " + hi.toFixed(dec);
       },
-      note: "Score = 100 × Σ(beds × f(d)) ÷ all included beds. Darker green = higher = better access. Five equal steps over the range of this result. Hospitals without a bed count are not in the supply. People = 2020 population." +
+      note: "Score = Σ(beds × f(d)), the beds of every included hospital weighted by distance decay. Darker green = higher = better access. Five equal steps over the range of this result. Hospitals without a bed count are not in the supply. People = 2020 population." +
         (ei.flat ? " All NPAs have the same score." : ""),
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
         if (!r) return "No data";
-        return r.score.toFixed(1) + "% · " + fmt(Math.round(r.wbeds)) + " weighted beds";
+        return fmt(Math.round(r.score)) + " weighted beds";
       },
       overlayFor: function (id) {
         var r = results.get(id);
@@ -280,8 +281,7 @@
         var r = results.get(p.id);
         if (!r) { box.appendChild(el("p", "placeholder", "No data")); return; }
         box.appendChild(detailList([
-          { label: "Score", value: r.score.toFixed(1) + "%", active: true },
-          { label: "Weighted beds", value: fmt(Math.round(r.wbeds)) },
+          { label: "Score (weighted beds)", value: fmt(Math.round(r.score)), active: true },
           { label: "Hospitals within threshold", value: String(r.n) },
         ]));
         if (!r.top.length) {

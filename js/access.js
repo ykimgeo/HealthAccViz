@@ -156,8 +156,7 @@
 
   // ---------------------------------------------------------------------
   // Gravity: A_i = sum_j S_j * f(d_ij), S_j = beds of hospital j.
-  // The score is expressed as a share of all supplied beds, so it runs from 0 to 100 whatever
-  // the decay function: score_i = 100 * A_i / sum_j S_j.
+  // The score is the plain Hansen sum A_i, in decay-weighted beds (no normalisation).
   // ---------------------------------------------------------------------
   // Distance decay f(d). d0 is the threshold: f is 0 beyond it.
   //   binary:      1 up to d0
@@ -176,7 +175,7 @@
   }
 
   // supply: Map hid -> beds (only hospitals that count, all with a bed count).
-  // Returns Map npa_id -> { score, wbeds, n, top } where wbeds = sum S_j f(d_ij), n = hospitals within d0,
+  // Returns Map npa_id -> { score, n, top } where score = sum S_j f(d_ij) (weighted beds), n = hospitals within d0,
   // top = the three largest contributions [{ hid, cost, f, w }].
   function gravity(byNpa, supply, basis, impedance, opts) {
     var key = costKey(basis, impedance);
@@ -199,7 +198,7 @@
         }
       }
       contrib.sort(function (a, b) { return b.w - a.w || (a.hid < b.hid ? -1 : 1); });
-      out.set(npaId, { score: (100 * w) / total, wbeds: w, n: n, top: contrib.slice(0, 3) });
+      out.set(npaId, { score: w, n: n, top: contrib.slice(0, 3) });
     });
     return out;
   }
