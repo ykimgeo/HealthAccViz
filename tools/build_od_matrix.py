@@ -34,6 +34,7 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 import geopandas as gpd
@@ -41,8 +42,8 @@ import numpy as np
 import pandas as pd
 
 GEOFABRIK = {
-    "nc": "https://download.geofabrik.de/north-carolina-latest.osm.pbf",
-    "sc": "https://download.geofabrik.de/south-carolina-latest.osm.pbf",
+    "nc": "https://download.geofabrik.de/north-america/us/north-carolina-latest.osm.pbf",
+    "sc": "https://download.geofabrik.de/north-america/us/south-carolina-latest.osm.pbf",
 }
 UTM = "EPSG:32617"  # UTM zone 17N, covers the whole study area
 # Fixed departure so runs are reproducible. Car routing here uses no schedules,
@@ -71,7 +72,15 @@ def download(url, dest):
         return last_modified
     log(f"  downloading {url}")
     tmp = dest + ".part"
-    with urllib.request.urlopen(url) as resp, open(tmp, "wb") as out:
+    try:
+        resp = urllib.request.urlopen(url)
+    except urllib.error.HTTPError as e:
+        raise SystemExit(
+            f"Download failed: HTTP {e.code} for {url}\n"
+            "Check the file name on https://download.geofabrik.de/north-america/us.html "
+            "and update GEOFABRIK in tools/build_od_matrix.py."
+        )
+    with resp, open(tmp, "wb") as out:
         last_modified = resp.headers.get("Last-Modified")
         total = int(resp.headers.get("Content-Length", 0))
         done = 0
