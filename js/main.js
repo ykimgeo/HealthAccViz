@@ -50,7 +50,7 @@
     { key: "household_income_2024", label: "Household income (2024)", decimals: 0, prefix: "$", suffix: "", legendUnit: "US dollars" },
   ];
 
-  var current = INDICATORS[1]; // default view: population density (area-standardized)
+  var current = null;          // selected indicator; null = boundaries only (default)
   var breaks = [];             // 5 upper class bounds for `current`
   var minValue = 0;
 
@@ -91,7 +91,11 @@
     return breaks.length - 1;
   }
 
+  // Boundaries-only look, used while no indicator is selected.
+  var NEUTRAL_STYLE = { color: "#4b6e8c", weight: 1, opacity: 0.9, fillColor: "#4b6e8c", fillOpacity: 0.18 };
+
   function baseStyle(feature) {
+    if (!current) return NEUTRAL_STYLE;
     var v = feature.properties[current.key];
     var missing = v === null || v === undefined;
     return {
@@ -109,6 +113,15 @@
   function updateLegend() {
     var box = document.getElementById("choropleth-legend");
     box.replaceChildren();
+    if (!current) {
+      var plain = el("ul", "legend");
+      var item = el("li");
+      item.appendChild(el("span", "sw sw-npa"));
+      item.appendChild(document.createTextNode("NPA boundary"));
+      plain.appendChild(item);
+      box.appendChild(plain);
+      return;
+    }
     box.appendChild(el("p", "legend-title", current.label));
     box.appendChild(el("p", "legend-sub", "Quantiles, 5 classes · " + current.legendUnit));
 
@@ -137,6 +150,7 @@
     nd.appendChild(el("span", "legend-count", missing + " NPAs"));
     ul.appendChild(nd);
     box.appendChild(ul);
+    box.appendChild(el("p", "legend-note", "Each class includes its upper bound."));
   }
 
   function showDetail(p) {
@@ -153,6 +167,14 @@
     box.appendChild(dl);
   }
 
+  function clearSelection() {
+    if (!selected) return;
+    npaLayer.resetStyle(selected);
+    selected = null;
+    var box = document.getElementById("npa-detail");
+    box.replaceChildren(el("p", "placeholder", "Click an area on the map"));
+  }
+
   function selectNPA(layer) {
     if (selected) npaLayer.resetStyle(selected);
     selected = layer;
@@ -165,14 +187,16 @@
     var p = layer.feature.properties;
     var box = el("div");
     box.appendChild(el("div", "tip-title", p.npa_name));
-    var text = formatValue(current, p[current.key]);
-    box.appendChild(el("div", "tip-sub", current.label + ": " + (text === null ? "No data" : text)));
+    if (current) {
+      var text = formatValue(current, p[current.key]);
+      box.appendChild(el("div", "tip-sub", current.label + ": " + (text === null ? "No data" : text)));
+    }
     return box;
   }
 
   function setIndicator(ind) {
     current = ind;
-    computeBreaks(ind);
+    if (current) computeBreaks(current);
     npaLayer.setStyle(baseStyle);
     if (selected) {
       selected.setStyle(SELECTED_STYLE);
@@ -183,25 +207,26 @@
 
   function buildIndicatorControl() {
     var box = document.getElementById("indicator-options");
-    INDICATORS.forEach(function (ind) {
+    // null = no choropleth; listed first and checked by default
+    [null].concat(INDICATORS).forEach(function (ind) {
       var label = el("label", "indicator-option");
       var input = el("input");
       input.type = "radio";
       input.name = "indicator";
-      input.value = ind.key;
+      input.value = ind ? ind.key : "none";
       input.checked = ind === current;
       input.addEventListener("change", function () { setIndicator(ind); });
       label.appendChild(input);
-      label.appendChild(el("span", null, ind.label));
+      label.appendChild(el("span", null, ind ? ind.label : "None (boundaries only)"));
       box.appendChild(label);
     });
   }
 
   function addNPA(geojson) {
     npaFeatures = geojson.features;
-    computeBreaks(current);
     npaLayer = L.geoJSON(geojson, {
       style: baseStyle,
+      bubblingMouseEvents: false, // a click on a polygon must not reach the map's own click handler
       onEachFeature: function (feature, layer) {
         layer.bindTooltip(tooltipFor, { sticky: true });
         layer.on({
@@ -214,6 +239,13 @@
     buildIndicatorControl();
     updateLegend();
   }
+
+  // Clicking the map outside any NPA polygon, or pressing Esc, clears the selection.
+  // (Dragging the map does not fire "click", so panning keeps the selection.)
+  map.on("click", clearSelection);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") clearSelection();
+  });
 
   // ----- hospital layer -----
   map.createPane("hospitals");
@@ -240,6 +272,7 @@
         var open = p.status === "OPEN";
         return L.circleMarker(latlng, {
           pane: "hospitals",
+          bubblingMouseEvents: false, // clicking a hospital leaves the NPA selection unchanged
           radius: hospitalRadius(p.beds),
           color: open ? "#8a2b21" : "#777777",
           weight: 1.5,
