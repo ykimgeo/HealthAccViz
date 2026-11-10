@@ -201,28 +201,22 @@ def prepare_osm(workdir, bbox, buffer_deg, skip_download):
 
 
 # ---------------------------------------------------------------- routing
-def to_int_ids(series, what):
-    """Digit strings -> integer ids (r5py ids). Leading zeros are restored from the original
-    strings when results are mapped back, so the integers are only used inside r5py."""
-    if not series.astype(str).str.fullmatch(r"\d+").all():
-        raise SystemExit(f"{what} must be digits only to be used as an r5py id")
-    return series.astype(str).astype("int64")
-
-
 def route(region_pbf, origins, destinations, max_time_min):
     import r5py
 
     log(f"  r5py {r5py.__version__}")
     o = origins.copy()
     d = destinations.copy()
-    # r5py identifies every point by its "id" column, and ids must be unique. We use the
-    # datasets' own identifiers as ids: the NPA number for origins ("id" in the NPA file)
-    # and the hospital "hid" for destinations. r5py's from_id / to_id therefore ARE the
-    # NPA number and the hospital hid, and the "id" columns are the join keys used below.
-    # The two sets must not share a value: equal ids made r5py return 0 minutes for
-    # those pairs (origin index i vs destination index i when both started at 0).
-    o["id"] = to_int_ids(o["npa_id"], "NPA id")
-    d["id"] = to_int_ids(d["hid"], "hospital hid")
+    # r5py identifies every point by its "id" column and only requires the values to be
+    # unique (r5py/util/data_validation.py); strings are fine. We use the datasets' own
+    # identifiers as strings: the NPA number for origins and the hospital hid for
+    # destinations. r5py's from_id / to_id therefore ARE the NPA number and the hospital
+    # hid, with leading zeros intact, and no mapping back is needed.
+    # An origin id must never equal a destination id: r5py sets the travel time of every
+    # pair with from_id == to_id to 0 (r5py/r5/travel_time_matrix.py), which is what made
+    # origin index i and destination index i come back as 0 minutes.
+    o["id"] = o["npa_id"].astype(str)
+    d["id"] = d["hid"].astype(str)
     for name, ids in (("origin", o["id"]), ("destination", d["id"])):
         if not ids.is_unique:
             raise SystemExit(f"{name} ids are not unique")
@@ -261,9 +255,12 @@ def route(region_pbf, origins, destinations, max_time_min):
     # one car leg per pair; summing legs keeps this correct if a pair has several
     dist = it.groupby(["from_id", "to_id"], as_index=False)["distance"].sum()
 
+    for frame in (ttm, dist):
+        frame["from_id"] = frame["from_id"].astype(str)
+        frame["to_id"] = frame["to_id"].astype(str)
     m = ttm.merge(dist, on=["from_id", "to_id"], how="outer")
-    m["npa_id"] = m["from_id"].map(dict(zip(o["id"], o["npa_id"])))
-    m["hid"] = m["to_id"].map(dict(zip(d["id"], d["hid"])))
+    m["npa_id"] = m["from_id"]  # the r5py ids are the NPA number and the hospital hid
+    m["hid"] = m["to_id"]
     m["network_min"] = m["travel_time"].astype(float)
     m["network_km"] = m["distance"].astype(float) / 1000.0
     return m[["npa_id", "hid", "network_km", "network_min"]]
