@@ -13,7 +13,7 @@
   <header class="app-header">
     <div class="app-title">
       <h1>Healthcare Access in Charlotte</h1>
-      <p>Subtitle placeholder</p>
+      <p>Yunsik Kim, PhD Student in Geography, UNC Charlotte</p>
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
       <button class="tab is-active" role="tab" id="tab-dashboard" aria-selected="true" aria-controls="view-dashboard" data-view="dashboard">Dashboard</button>
@@ -58,17 +58,6 @@
           <button type="button" id="btn-apply" class="btn" disabled>Apply</button>
           <p id="access-hint" class="status" role="status"></p>
         </section>
-        <section class="card" id="panel-legend">
-          <h2>Legend</h2>
-          <div id="choropleth-legend"></div>
-          <ul class="legend legend-symbols">
-            <li><span class="sw sw-hosp"></span>Hospital (open)</li>
-            <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
-            <li id="legend-hosp-excluded" hidden><span class="sw sw-hosp-excluded"></span>Hospital (not included)</li>
-            <li id="legend-link" hidden><span class="sw sw-link"></span>Nearest hospital (straight line)</li>
-          </ul>
-          <p class="legend-note">Hospital circle area increases with licensed bed count. Hospitals with no bed count use the smallest size.</p>
-        </section>
         <section class="card" id="panel-controls">
           <h2>Controls</h2>
           <fieldset class="indicator-fieldset">
@@ -81,6 +70,21 @@
 
       <div class="col col-map">
         <div id="map" aria-label="Map of Charlotte neighborhood profile areas"></div>
+        <section class="map-legend" id="panel-legend" aria-label="Legend">
+          <button type="button" class="legend-toggle" id="legend-toggle" aria-expanded="true" aria-controls="legend-body">
+            <span>Legend</span><span class="chev" aria-hidden="true">▾</span>
+          </button>
+          <div id="legend-body">
+            <div id="choropleth-legend"></div>
+            <ul class="legend legend-symbols">
+              <li><span class="sw sw-hosp"></span>Hospital (open)</li>
+              <li><span class="sw sw-hosp-closed"></span>Hospital (closed)</li>
+              <li id="legend-hosp-excluded" hidden><span class="sw sw-hosp-excluded"></span>Hospital (not included)</li>
+              <li id="legend-link" hidden><span class="sw sw-link"></span>Nearest hospital (straight line)</li>
+            </ul>
+            <p class="legend-note">Circle area increases with bed count; no bed count = smallest size.</p>
+          </div>
+        </section>
       </div>
 
       <aside class="col col-right" aria-label="Charts and details">

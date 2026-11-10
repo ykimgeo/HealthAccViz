@@ -151,7 +151,7 @@
         if (i < b.length) return b[i - 1] + " – " + b[i];
         return "> " + b[b.length - 1];
       },
-      note: "Darker green = shorter = better access. Each class includes its upper bound.",
+      note: "Darker green = shorter = better access. Class upper bounds are inclusive. People = 2020 population.",
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -209,12 +209,20 @@
       sw.style.background = color;
       li.appendChild(sw);
       li.appendChild(el("span", "legend-range", label));
-      li.appendChild(el("span", "legend-count", n + " NPAs"));
-      if (current.showPop) li.appendChild(el("span", "legend-pop", fmt(Math.round(pop)) + " people (2020)"));
+      li.appendChild(el("span", "legend-count", current.showPop ? String(n) : n + " NPAs"));
+      if (current.showPop) li.appendChild(el("span", "legend-pop", fmt(Math.round(pop))));
       return li;
     }
 
-    var ul = el("ul", "legend");
+    var ul = el("ul", "legend legend-grid" + (current.showPop ? " has-pop" : ""));
+    if (current.showPop) {
+      var head = el("li", "legend-head");
+      head.appendChild(el("span"));
+      head.appendChild(el("span"));
+      head.appendChild(el("span", "legend-count", "NPAs"));
+      head.appendChild(el("span", "legend-pop", "People"));
+      ul.appendChild(head);
+    }
     for (var i = 0; i < current.colors.length; i++) ul.appendChild(row(current.colors[i], current.labelFor(i), counts[i], pops[i]));
     ul.appendChild(row(NO_DATA_COLOR, "No data", missing, missingPop));
     box.appendChild(ul);
@@ -538,6 +546,18 @@
     syncImpedance();
     updateHint();
   }
+
+  // ----- legend: collapsible, starts collapsed on narrow screens where the map is short -----
+  (function () {
+    var toggle = byId("legend-toggle");
+    var body = byId("legend-body");
+    function setOpen(open) {
+      body.hidden = !open;
+      toggle.setAttribute("aria-expanded", String(open));
+    }
+    setOpen(window.innerWidth > 1100);
+    toggle.addEventListener("click", function () { setOpen(body.hidden); });
+  })();
 
   // =====================================================================
   // Load data
