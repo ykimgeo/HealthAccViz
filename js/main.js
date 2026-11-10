@@ -882,7 +882,7 @@
       x[0].min = x[1].min = x[2].min;
       x[0].max = x[1].max = x[2].max;
       x[0].step = x[2].step;
-      x[1].step = "any";
+      x[1].step = x[2].step; // the up/down buttons move one slider step (step "any" would move by 1, outside the range)
       var v = gpValue[imp][x[3]];
       x[0].value = v;
       x[1].value = trimNum(v);
