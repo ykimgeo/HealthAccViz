@@ -254,20 +254,40 @@
     return { byNpa: out, ratio: ratio1000 };
   }
 
-  // Equal-interval classes over the observed range of a result: k classes, upper bounds of the first k-1.
-  function equalIntervals(values, k) {
-    var min = Infinity, max = -Infinity;
-    values.forEach(function (v) { if (v < min) min = v; if (v > max) max = v; });
-    var breaks = [];
-    for (var i = 1; i < k; i++) breaks.push(min + ((max - min) * i) / k);
-    return { min: min, max: max, breaks: breaks, flat: max - min < 1e-9 };
+  // Linear-interpolation percentile of an ascending array (numpy.percentile default).
+  function percentile(sorted, p) {
+    var k = (sorted.length - 1) * p / 100;
+    var f = Math.floor(k);
+    var c = Math.min(f + 1, sorted.length - 1);
+    return sorted[f] + (sorted[c] - sorted[f]) * (k - f);
+  }
+
+  // Quantile classes over the values of a result: k classes, upper bounds of the first k-1 in `breaks`
+  // (class i holds values in (breaks[i-1], breaks[i]], upper bound inclusive).
+  // `decimals` is the fewest decimals (0-3) that keep every distinct pair of bounds distinct when printed.
+  function quantiles(values, k) {
+    var v = [];
+    values.forEach(function (x) { v.push(x); });
+    v.sort(function (a, b) { return a - b; });
+    var min = v[0], max = v[v.length - 1], breaks = [];
+    for (var i = 1; i < k; i++) breaks.push(percentile(v, (100 * i) / k));
+    var edges = [min].concat(breaks, [max]);
+    var decimals = 3;
+    for (var d = 0; d <= 3; d++) {
+      var ok = true;
+      for (var j = 1; j < edges.length; j++) {
+        if (edges[j] > edges[j - 1] && edges[j].toFixed(d) === edges[j - 1].toFixed(d)) { ok = false; break; }
+      }
+      if (ok) { decimals = d; break; }
+    }
+    return { min: min, max: max, breaks: breaks, flat: max - min < 1e-9, decimals: decimals };
   }
 
   var api = {
     decay: decay,
     gravity: gravity,
     sfca: sfca,
-    equalIntervals: equalIntervals,
+    quantiles: quantiles,
     container: container,
     containerClasses: containerClasses,
     parseOD: parseOD,

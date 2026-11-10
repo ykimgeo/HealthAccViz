@@ -148,7 +148,7 @@
       valueOf: function (p) { return results.has(p.id) ? results.get(p.id).cost : null; },
       classOf: function (v) { return Access.classifyFixed(v, b); },
       title: METHOD_LABELS[settings.method] + ": " + IMPEDANCE_LABELS[settings.impedance] + " to nearest hospital",
-      sub: "Fixed classes · " + BASIS_LABELS[settings.basis] + " · " + fb.unit,
+      sub: fb.unit,
       labelFor: function (i) {
         if (i === 0) return "0 – " + b[0];
         if (i < b.length) return b[i - 1] + " – " + b[i];
@@ -203,7 +203,7 @@
       },
       classOf: function (v) { return Access.classifyFixed(v, cls.breaks); },
       title: "Container: " + (isCount ? "number of hospitals" : "number of beds"),
-      sub: "Fixed classes · hospitals inside each NPA · " + cls.unit,
+      sub: cls.unit,
       labelFor: function (i) { return cls.labels[i]; },
       note: "Darker green = more = better access. Class upper bounds are inclusive. People = 2020 population. Hospitals outside every NPA are not counted.",
       showPop: true,
@@ -237,9 +237,9 @@
     };
   }
 
-  // Gravity and 2SFCA share one layer builder: a score per NPA classed in five equal steps over the
-  // observed range of the result (the range moves a lot with the threshold and the decay function,
-  // so fixed class bounds would put most NPAs in one class).
+  // Gravity and 2SFCA share one layer builder: a score per NPA classed in five quantiles of the result
+  // (the range moves a lot with the threshold, the decay function and outlying hospitals, so neither
+  // fixed nor equal-interval bounds would hold up).
   //   Gravity: score = sum_j(beds_j * f(d_ij)), in weighted beds
   //   2SFCA:   score = 1000 * sum_j(R_j * f(d_ij)), in beds per 1,000 people
   var SCORE_SPECS = {
@@ -270,12 +270,9 @@
     var spec = SCORE_SPECS[settings.method];
     var vals = [];
     results.forEach(function (r) { vals.push(r.score); });
-    var ei = Access.equalIntervals(vals, 5);
+    var ei = Access.quantiles(vals, 5);
     var unit = settings.impedance === "time" ? "min" : "km";
-    var span = ei.max - ei.min;
-    var dec = ei.flat ? (settings.method === "2sfca" ? 2 : 0) : span < 5 ? 2 : span < 50 ? 1 : 0; // narrow ranges need decimals to tell classes apart
-    var cfg = DECAY_LABELS[settings.decay] + " · " + BASIS_LABELS[settings.basis] + " · " + IMPEDANCE_LABELS[settings.impedance] +
-      " · d0 = " + settings.d0 + " " + unit + (settings.decay === "negexp" ? " · β = " + settings.beta + " /" + unit : "");
+    var dec = ei.flat ? (settings.method === "2sfca" ? 2 : 0) : settings.method === "2sfca" ? Math.max(ei.decimals, 1) : ei.decimals; // beds per 1,000 people: at least one decimal
     return {
       kind: "access",
       settings: settings,
@@ -285,14 +282,14 @@
       valueOf: function (p) { var r = results.get(p.id); return r ? r.score : null; },
       classOf: function (v) { return ei.flat ? 4 : Access.classifyFixed(v, ei.breaks); },
       title: spec.title,
-      sub: cfg + " · " + spec.unitText,
+      sub: spec.unitText,
       labelFor: function (i) {
         if (ei.flat) return i === 4 ? ei.max.toFixed(dec) : "—";
         var lo = i === 0 ? ei.min : ei.breaks[i - 1];
         var hi = i < 4 ? ei.breaks[i] : ei.max;
         return lo.toFixed(dec) + " – " + hi.toFixed(dec);
       },
-      note: spec.noteStart + " Darker green = higher = better access. Five equal steps over the range of this result. Hospitals without a bed count are not in the supply. People = 2020 population." +
+      note: spec.noteStart + " Darker green = higher = better access. Five quantile classes (about the same number of NPAs in each) computed from this result; class upper bounds are inclusive. Hospitals without a bed count are not in the supply. People = 2020 population." +
         (spec.extraNote || "") + (ei.flat ? " All NPAs have the same score." : ""),
       showPop: true,
       tooltipLine: function (p) {
