@@ -830,10 +830,10 @@
   function initAccessPanel(hospitalFeatures, od) {
     odByNpa = od;
     hospFeatures = hospitalFeatures;
-    var counts = {};
-    hospitalFeatures.forEach(function (f) { counts[f.properties.type] = (counts[f.properties.type] || 0) + 1; });
+    var types = {};
+    hospitalFeatures.forEach(function (f) { types[f.properties.type] = true; });
     var box = byId("type-filters");
-    Object.keys(counts).sort().forEach(function (t) {
+    Object.keys(types).sort().forEach(function (t) {
       var label = el("label", "check");
       var input = el("input");
       input.type = "checkbox";
@@ -841,7 +841,7 @@
       input.checked = true; // specialty hospitals are included by default
       input.addEventListener("change", updateHint);
       label.appendChild(input);
-      label.appendChild(document.createTextNode(" " + sentence(t) + " (" + counts[t] + ")"));
+      label.appendChild(document.createTextNode(" " + sentence(t)));
       box.appendChild(label);
     });
     [selMeasure, chkClosed].forEach(function (c) { c.addEventListener("change", updateHint); });
