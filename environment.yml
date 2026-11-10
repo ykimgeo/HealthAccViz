@@ -1,0 +1,19 @@
+# Conda environment for tools/build_od_matrix.py (OD matrix with r5py).
+#
+#   conda env create -f environment.yml
+#   conda activate healthaccviz-od
+#
+# r5py runs the R5 routing engine on Java, so a JDK is required. JDK 21 was the
+# version available when this file was written; if r5py's documentation asks for
+# a different JDK for the version you install, change the openjdk line.
+name: healthaccviz-od
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - openjdk=21
+  - r5py>=1.1
+  - geopandas
+  - pandas
+  - numpy
+  - osmium-tool   # CLI used to clip and merge the Geofabrik extracts
