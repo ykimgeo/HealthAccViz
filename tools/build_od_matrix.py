@@ -201,22 +201,34 @@ def prepare_osm(workdir, bbox, buffer_deg, skip_download):
 
 
 # ---------------------------------------------------------------- routing
+def to_int_ids(series, what):
+    """Digit strings -> integer ids (r5py ids). Leading zeros are restored from the original
+    strings when results are mapped back, so the integers are only used inside r5py."""
+    if not series.astype(str).str.fullmatch(r"\d+").all():
+        raise SystemExit(f"{what} must be digits only to be used as an r5py id")
+    return series.astype(str).astype("int64")
+
+
 def route(region_pbf, origins, destinations, max_time_min):
     import r5py
 
     log(f"  r5py {r5py.__version__}")
     o = origins.copy()
     d = destinations.copy()
-    # r5py identifies every point by its "id" column and the ids must be unique.
-    # Origins and destinations share ONE id range (origins 0..n_o-1, destinations
-    # n_o..n_o+n_d-1), so an origin id can never equal a destination id. Separate
-    # 0..n ranges made origin i and destination i collide, and r5py returned
-    # 0 minutes for those pairs. The "id" columns are the join keys used below.
-    o["id"] = np.arange(len(o))
-    d["id"] = np.arange(len(d)) + len(o)
-    all_ids = pd.concat([o["id"], d["id"]])
-    if not all_ids.is_unique:
-        raise SystemExit("origin and destination ids must be unique across both sets")
+    # r5py identifies every point by its "id" column, and ids must be unique. We use the
+    # datasets' own identifiers as ids: the NPA number for origins ("id" in the NPA file)
+    # and the hospital "hid" for destinations. r5py's from_id / to_id therefore ARE the
+    # NPA number and the hospital hid, and the "id" columns are the join keys used below.
+    # The two sets must not share a value: equal ids made r5py return 0 minutes for
+    # those pairs (origin index i vs destination index i when both started at 0).
+    o["id"] = to_int_ids(o["npa_id"], "NPA id")
+    d["id"] = to_int_ids(d["hid"], "hospital hid")
+    for name, ids in (("origin", o["id"]), ("destination", d["id"])):
+        if not ids.is_unique:
+            raise SystemExit(f"{name} ids are not unique")
+    shared = sorted(set(o["id"]) & set(d["id"]))
+    if shared:
+        raise SystemExit(f"origin and destination ids overlap: {shared[:10]}; r5py needs them distinct")
 
     net = r5py.TransportNetwork(region_pbf)
     max_time = dt.timedelta(minutes=max_time_min)
