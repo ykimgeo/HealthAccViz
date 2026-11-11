@@ -12,6 +12,7 @@
         "This dashboard lets you switch the method and its settings and see how the result changes.</p>" +
         "<p>The unit of analysis is the Census tract (305 tracts in Mecklenburg County). " +
         "See the <b>Methods</b> tab for details.</p>" +
+        "<p>For the best experience, view this dashboard on a desktop or laptop computer.</p>" +
         "<p>Use the <b>?</b> button in the header to open this tour again at any time.</p>"
     },
     {
