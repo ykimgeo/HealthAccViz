@@ -400,4 +400,5 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 }
 .tour-spot[hidden] { display: none; }
 .tour-overlay.is-anchored { background: transparent; display: block; padding: 0; }
+.tour-overlay.is-anchored[hidden] { display: none; }
 .tour-overlay.is-anchored .tour-box { position: fixed; z-index: 2002; }
