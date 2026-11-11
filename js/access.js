@@ -5,6 +5,7 @@
   "use strict";
 
   // OD matrix columns: tract_id, hid, euclid_km, network_km, network_min
+  // An empty network cost (no route found) is read as NaN and treated as unreachable everywhere below.
   // ids stay strings so the leading zeros of hid and of the tract GEOID survive.
   function parseOD(text) {
     var lines = text.split(/\r?\n/);
@@ -63,7 +64,7 @@
       var best = null;
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
-        if (!includedHids.has(r.hid)) continue;
+        if (!includedHids.has(r.hid) || !isFinite(r[key])) continue; // no route = unreachable
         if (best === null || better(r, best, key)) best = r;
       }
       if (best) out.set(tractId, { hid: best.hid, cost: best[key], e: best.e, nk: best.nk, nm: best.nm });
@@ -164,7 +165,7 @@
   //   gaussian:    [exp(-1/2 (d/d0)^2) - exp(-1/2)] / [1 - exp(-1/2)]   (equals 1 at 0 and 0 at d0)
   var E_HALF = Math.exp(-0.5);
   function decay(kind, d, d0, beta) {
-    if (d > d0) return 0;
+    if (!(d <= d0)) return 0; // beyond the threshold, or no route (NaN)
     if (kind === "binary") return 1;
     if (kind === "negexp") return Math.exp(-beta * d);
     if (kind === "gaussian") {

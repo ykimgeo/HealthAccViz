@@ -186,7 +186,7 @@
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
-        if (!r) return "No hospital included in this analysis";
+        if (!r) return "No included hospital is reachable";
         return fmtCost(r.cost, fb.unit) + " · " + hospitals.get(r.hid).name;
       },
       summary: function () {
@@ -222,7 +222,7 @@
         box.appendChild(el("p", "detail-sub", "Nearest hospital"));
         var r = results.get(p.id);
         if (!r) {
-          box.appendChild(el("p", "placeholder", "No hospital included in this analysis"));
+          box.appendChild(el("p", "placeholder", "No included hospital is reachable"));
           return;
         }
         var h = hospitals.get(r.hid);

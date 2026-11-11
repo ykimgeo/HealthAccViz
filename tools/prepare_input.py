@@ -19,8 +19,9 @@ Inputs (data/raw)
 
 Outputs (data/input)
   tracts_mecklenburg.geojson  Mecklenburg tract polygons (WGS84, simplified) + 2024 indicators
-  tracts_all.csv              all tracts of the 14 counties: geoid, county_fips, pop, lon, lat, basis
-                              (lon/lat = population-weighted centroid of the tract's block groups)
+  tracts_all.csv              all tracts of the 14 counties: geoid, county_fips, pop, lon, lat, basis, int_lon, int_lat
+                              (lon/lat = population-weighted centroid of the tract's block groups;
+                              int_lon/int_lat = Census internal point, the fallback origin for routing)
   hospitals_input.geojson     hospitals in the 14 counties (WGS84)
   tracts.meta.json            provenance and QA numbers
 """
@@ -123,6 +124,7 @@ def prepare_tracts():
         rows.append((g, x, y, basis))
     cen = gpd.GeoSeries(gpd.points_from_xy([r[1] for r in rows], [r[2] for r in rows]), index=[r[0] for r in rows], crs=UTM)
     cen_ll = cen.to_crs("EPSG:4326")
+    own_ll = own.to_crs("EPSG:4326")
 
     poly_utm = tr.geometry.to_crs(UTM)
     inside = cen.reindex(poly_utm.index).within(poly_utm)
@@ -138,6 +140,8 @@ def prepare_tracts():
         "lon": [round(p.x, 6) for p in cen_ll],
         "lat": [round(p.y, 6) for p in cen_ll],
         "basis": [r[3] for r in rows],
+        "int_lon": [round(own_ll[r[0]].x, 6) for r in rows],
+        "int_lat": [round(own_ll[r[0]].y, 6) for r in rows],
     }).sort_values("geoid")
     out.to_csv(os.path.join(OUT, "tracts_all.csv"), index=False)
     print(f"  tracts_all.csv: {len(out)} rows, population {int(out['pop'].sum()):,}; zero-population tracts: {int((out['pop'] == 0).sum())}")
