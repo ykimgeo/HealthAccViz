@@ -6,13 +6,27 @@
   // instead of leaving up to half of it empty (integer zoom levels only).
   var map = L.map("map", { zoomSnap: 0.25 }).setView([35.227, -80.843], 10);
 
-  // Esri World Light Gray Canvas: a muted, label-free basemap that suits a choropleth.
+  // Basemaps (all free, no API key). The default is a muted, label-light canvas that suits a choropleth.
   // Note the ArcGIS tile order is {z}/{y}/{x}, not {z}/{x}/{y}.
-  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
-    maxNativeZoom: 16,
-    maxZoom: 18,
-    attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
-  }).addTo(map);
+  var ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
+  var basemaps = {
+    "Light gray": L.tileLayer(ESRI + "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+      maxNativeZoom: 16, maxZoom: 18, attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
+    }),
+    "Streets (OpenStreetMap)": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxNativeZoom: 19, maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+    }),
+    "Satellite": L.tileLayer(ESRI + "World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+      maxNativeZoom: 19, maxZoom: 18, attribution: "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    }),
+    "Topographic": L.tileLayer(ESRI + "World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+      maxNativeZoom: 19, maxZoom: 18, attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, USGS, and others",
+    }),
+    "Dark": L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd", maxNativeZoom: 20, maxZoom: 18, attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+    }),
+  };
+  basemaps["Light gray"].addTo(map);
 
   // Scale bar (km and mi), bottom-right so it does not sit under the legend.
   L.control.scale({ position: "bottomright", metric: true, imperial: true, maxWidth: 140 }).addTo(map);
@@ -1286,7 +1300,7 @@
       var hosp = addHospitals(res[1]);
       // Fit to Mecklenburg County; hospitals in the other counties are reached by panning.
       map.fitBounds(tractLayer.getBounds(), { padding: [20, 20] });
-      L.control.layers(null, { "Tract boundaries": tractLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
+      L.control.layers(basemaps, { "Tract boundaries": tractLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
       initAccessPanel(res[1].features, res[3]);
       if (odError) setStatus("OD matrix failed to load: " + odError, true);
       else setStatus(res[0].features.length + " Mecklenburg County tracts, " + res[1].features.length + " hospitals, OD matrix loaded.");
