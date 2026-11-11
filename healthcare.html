@@ -7,6 +7,8 @@
   <meta name="description" content="Interactive GeoVisualization comparing hospital accessibility measures in Mecklenburg County, NC (GIS Day 2026).">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+        integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -177,22 +179,30 @@
         </ul>
 
         <h2>Accessibility measures</h2>
-        <p>Let <i>i</i> be a tract, <i>j</i> a hospital, <i>d<sub>ij</sub></i> the distance or time from the tract point to the hospital (according to the selected basis and impedance), <i>S<sub>j</sub></i> the number of beds of hospital <i>j</i>, and <i>P<sub>k</sub></i> the population of tract <i>k</i>.</p>
+        <p>Let $i$ be a tract, $j$ a hospital, $d_{ij}$ the distance or time from the tract point to the hospital (according to the selected basis and impedance), $S_j$ the number of beds of hospital $j$, and $P_k$ the population of tract $k$. $A_i$ is the accessibility score of tract $i$.</p>
         <ul>
-          <li><b>Closest facility</b>: <i>d<sub>ij</sub></i> to the nearest included hospital. Lower is better. Ties are broken by road distance, then straight-line distance.</li>
+          <li><b>Closest facility</b>: the distance or time to the nearest included hospital. Lower is better. Ties are broken by road distance, then straight-line distance.
+            $$A_i = \min_j d_{ij}$$</li>
           <li><b>Container</b>: the number of hospitals (or beds) whose location lies inside the tract boundary. Distance is not used.</li>
-          <li><b>Gravity</b>: <i>A<sub>i</sub></i> = &Sigma;<sub>j</sub> <i>S<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). Beds are weighted by how close they are. The score is in weighted beds and does not account for how many people compete for those beds.</li>
-          <li><b>2SFCA</b> (two-step floating catchment area): first, for each hospital, <i>R<sub>j</sub></i> = <i>S<sub>j</sub></i> / &Sigma;<sub>k</sub> <i>P<sub>k</sub></i> &middot; <i>f</i>(<i>d<sub>kj</sub></i>), the beds per resident among all 752 tracts that can reach it. Second, for each tract, the score = 1,000 &times; &Sigma;<sub>j</sub> <i>R<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). The unit is beds per 1,000 people.</li>
+          <li><b>Gravity</b>: beds are weighted by how close they are. The score is in weighted beds and does not account for how many people compete for those beds.
+            $$A_i = \sum_j S_j \, f(d_{ij})$$</li>
+          <li><b>2SFCA</b> (two-step floating catchment area): first, for each hospital, the beds per resident among all 752 tracts that can reach it:
+            $$R_j = \frac{S_j}{\sum_k P_k \, f(d_{kj})}$$
+            Second, for each tract, the sum of the ratios of the hospitals it can reach, multiplied by 1,000. The unit is beds per 1,000 people.
+            $$A_i = 1000 \times \sum_j R_j \, f(d_{ij})$$</li>
         </ul>
-        <p><b>Edge effect at the county boundary</b>: residents of Mecklenburg tracts can use hospitals across the county line, and hospitals just outside the county serve Mecklenburg residents. To account for this, hospitals in all 14 counties are supply candidates for every measure except Container, and the 2SFCA demand step (<i>R<sub>j</sub></i>) uses the populations of all 752 tracts of the 14 counties. Only the 305 Mecklenburg tracts are displayed and summarized.</p>
-        <p><b>Role of the distance decay function</b>: Gravity and 2SFCA do not count every bed equally. A distance decay function <i>f</i>(<i>d</i>) converts the distance or time from a tract to a hospital into a weight between 0 and 1, and the beds of that hospital are multiplied by this weight. A nearby hospital gets a weight close to 1, a distant hospital a weight close to 0, and a hospital beyond the threshold <i>d</i><sub>0</sub> gets 0 (it is outside the catchment). The reasoning follows Tobler's First Law of Geography: &ldquo;everything is related to everything else, but near things are more related than distant things.&rdquo; Applied here, residents are assumed to use nearby hospitals more than distant ones, so a bed close to a tract adds more to its access than a bed far away. The three functions below differ in how fast the weight falls with distance.</p>
-        <p>Distance decay function <i>f</i>(<i>d</i>), with threshold <i>d</i><sub>0</sub> and coefficient &beta; set by the sliders:</p>
+        <p><b>Edge effect at the county boundary</b>: residents of Mecklenburg tracts can use hospitals across the county line, and hospitals just outside the county serve Mecklenburg residents. To account for this, hospitals in all 14 counties are supply candidates for every measure except Container, and the 2SFCA demand step ($R_j$) uses the populations of all 752 tracts of the 14 counties. Only the 305 Mecklenburg tracts are displayed and summarized.</p>
+        <p><b>Role of the distance decay function</b>: Gravity and 2SFCA do not count every bed equally. A distance decay function $f(d)$ converts the distance or time from a tract to a hospital into a weight between 0 and 1, and the beds of that hospital are multiplied by this weight. A nearby hospital gets a weight close to 1, a distant hospital a weight close to 0, and a hospital beyond the threshold $d_0$ gets 0 (it is outside the catchment). The reasoning follows Tobler's First Law of Geography: &ldquo;everything is related to everything else, but near things are more related than distant things.&rdquo; Applied here, residents are assumed to use nearby hospitals more than distant ones, so a bed close to a tract adds more to its access than a bed far away. The three functions below differ in how fast the weight falls with distance.</p>
+        <p>Distance decay function $f(d)$, with threshold $d_0$ and coefficient $\beta$ set by the sliders:</p>
         <ul>
-          <li><b>Binary</b>: 1 if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0.</li>
-          <li><b>Negative exponential</b>: exp(&minus;&beta;<i>d</i>) if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0.</li>
-          <li><b>Gaussian</b>: [exp(&minus;&frac12;(<i>d</i>/<i>d</i><sub>0</sub>)<sup>2</sup>) &minus; exp(&minus;&frac12;)] / [1 &minus; exp(&minus;&frac12;)] if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0. It falls from 1 at <i>d</i> = 0 to 0 at <i>d</i><sub>0</sub>.</li>
+          <li><b>Binary</b>:
+            $$f(d) = \begin{cases} 1 &amp; d \le d_0 \\ 0 &amp; d \gt d_0 \end{cases}$$</li>
+          <li><b>Negative exponential</b>:
+            $$f(d) = \begin{cases} e^{-\beta d} &amp; d \le d_0 \\ 0 &amp; d \gt d_0 \end{cases}$$</li>
+          <li><b>Gaussian</b> (falls from 1 at $d = 0$ to 0 at $d_0$):
+            $$f(d) = \begin{cases} \dfrac{e^{-\frac{1}{2}(d/d_0)^2} - e^{-\frac{1}{2}}}{1 - e^{-\frac{1}{2}}} &amp; d \le d_0 \\ 0 &amp; d \gt d_0 \end{cases}$$</li>
         </ul>
-        <p>Default settings are <i>d</i><sub>0</sub> = 30 min or 20 km, and &beta; = 0.05 per min or 0.1 per km. These are starting values for exploration, not values estimated from patient data. A tract with no route to a hospital is treated as unreachable.</p>
+        <p>Default settings are $d_0 = 30$ min or 20 km, and $\beta = 0.05$ per min or $0.1$ per km. These are starting values for exploration, not values estimated from patient data. A tract with no route to a hospital is treated as unreachable.</p>
 
         <h2>How to read the dashboard</h2>
         <ul>
@@ -255,5 +265,10 @@
   <script src="js/stats.js"></script>
   <script src="js/main.js"></script>
   <script src="js/tour.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+          integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+          integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script>
+  <script defer src="js/math.js"></script>
 </body>
 </html>
