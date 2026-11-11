@@ -402,3 +402,8 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .tour-overlay.is-anchored { background: transparent; display: block; padding: 0; }
 .tour-overlay.is-anchored[hidden] { display: none; }
 .tour-overlay.is-anchored .tour-box { position: fixed; z-index: 2002; }
+
+.prose h3 { margin: 16px 0 4px; font-size: 15px; }
+.prose p { margin: 0 0 10px; }
+.prose ul { margin: 0 0 10px; padding-left: 20px; }
+.prose li { margin-bottom: 5px; }
