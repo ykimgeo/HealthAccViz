@@ -19,6 +19,7 @@
       <button class="tab is-active" role="tab" id="tab-dashboard" aria-selected="true" aria-controls="view-dashboard" data-view="dashboard">Dashboard</button>
       <button class="tab" role="tab" id="tab-methods" aria-selected="false" aria-controls="view-methods" data-view="methods">Methods</button>
     </nav>
+    <button type="button" class="help-btn" id="btn-tour" aria-label="Open the quick tour" title="Quick tour">?</button>
   </header>
 
   <main>
@@ -133,6 +134,10 @@
           <h2>Summary</h2>
           <div id="summary-body"><p class="placeholder">Apply an accessibility measure to see population-weighted statistics.</p></div>
         </section>
+        <section class="card" id="panel-detail">
+          <h2>Selection</h2>
+          <div id="selection-detail"><p class="placeholder">Click an area or a hospital on the map</p></div>
+        </section>
         <section class="card" id="panel-charts">
           <h2>Charts</h2>
           <div id="chart-controls" hidden>
@@ -142,10 +147,6 @@
             </label>
           </div>
           <div id="chart-area"><p class="placeholder">Apply an accessibility measure to see how it relates to the indicators.</p></div>
-        </section>
-        <section class="card" id="panel-detail">
-          <h2>Selection</h2>
-          <div id="selection-detail"><p class="placeholder">Click an area or a hospital on the map</p></div>
         </section>
       </aside>
     </section>
@@ -168,10 +169,28 @@
     <span>GIS Day 2026 · AI Interactive GeoVisualization Competition</span>
   </footer>
 
+  <div class="tour-overlay" id="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title" hidden>
+    <div class="tour-box">
+      <button type="button" class="tour-skip" id="tour-skip">Skip</button>
+      <h2 id="tour-title"></h2>
+      <figure class="tour-fig" id="tour-fig" hidden>
+        <img id="tour-img" alt="">
+        <div class="tour-missing" id="tour-missing" hidden></div>
+      </figure>
+      <div id="tour-body" class="tour-body"></div>
+      <div class="tour-nav">
+        <button type="button" class="btn-sec" id="tour-prev">Prev</button>
+        <span class="tour-count" id="tour-count" aria-live="polite"></span>
+        <button type="button" class="btn" id="tour-next">Next</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/access.js"></script>
   <script src="js/stats.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/tour.js"></script>
 </body>
 </html>
