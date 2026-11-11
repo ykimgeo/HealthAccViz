@@ -7,10 +7,12 @@
   var STEPS = [
     {
       title: "Welcome",
-      body: "<p>This dashboard compares how easily residents of Mecklenburg County (Charlotte, NC) can reach hospitals. " +
-        "The unit of analysis is the Census tract (305 tracts). Different accessibility measures give different pictures, " +
-        "so you can switch the measure and see how the result changes.</p>" +
-        "<p>This tour takes about one minute. Use the <b>?</b> button in the header to open it again at any time.</p>"
+      body: "<p>This dashboard compares how easily residents of Mecklenburg County (Charlotte, NC) can reach hospitals.</p>" +
+        "<p>Healthcare accessibility results differ depending on the purpose of the measurement and the method used. " +
+        "This dashboard lets you switch the method and its settings and see how the result changes.</p>" +
+        "<p>The unit of analysis is the Census tract (305 tracts in Mecklenburg County). " +
+        "See the <b>Methods</b> tab for details.</p>" +
+        "<p>Use the <b>?</b> button in the header to open this tour again at any time.</p>"
     },
     {
       target: "#panel-access",
