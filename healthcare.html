@@ -160,19 +160,19 @@
         <h2>Data</h2>
         <h3>Demand: residents</h3>
         <ul>
-          <li><b>Unit of analysis</b>: Census tract. Results are shown only for the 305 tracts of Mecklenburg County (2024 population: 1,154,681).</li>
+          <li><b>Unit of analysis</b>: Census tract. Results are shown for the 305 tracts of Mecklenburg County (2024 population: 1,154,681).</li>
           <li><b>Population and indicators</b>: Carolinas Regional Explorer (UNC Charlotte Urban Institute), 2024 tract indicators based on the American Community Survey (ACS) 5-year estimates: total population, population density, share aged 65+, median age, and household income.</li>
           <li><b>Surrounding counties</b>: Mecklenburg County and 13 surrounding counties (11 counties in NC including Mecklenburg, 3 in SC; 752 tracts in total) are used as demand and as route origins in the calculations. Their tracts are not drawn on the map.</li>
         </ul>
         <h3>Origins: where residents are located</h3>
-        <p>Each tract is represented by one point, the population-weighted centroid of its block groups. The weights are 2024 ACS block-group populations (table B01001, total population; 1,813 block groups). Each block group is located at its U.S. Census Bureau TIGER/Line 2024 internal point. Block-group populations sum exactly to the tract populations for all 752 tracts. Three centroids fall outside their tract polygon (at most 144 m).</p>
+        <p>Each tract is represented by one point, the population-weighted centroid of its block groups. The weights are 2024 ACS block-group populations (table B01001, total population; 1,813 block groups). Each block group is located at its U.S. Census Bureau TIGER/Line 2024 internal point. Three centroids fall outside their tract polygon (at most 144 m).</p>
         <h3>Supply: hospitals</h3>
-        <p>HIFLD hospital layer: 40 hospitals in the 14 counties (37 open, 3 closed). 39 have a bed count. Beds are the measure of supply. By default, closed hospitals and the one military hospital are excluded, and hospital types can be switched on or off in the left panel. Hospitals without a bed count are left out of Gravity and 2SFCA, which need beds.</p>
+        <p>Homeland Infrastructure Foundation-Level Data (HIFLD) Next, hospital layer: 40 hospitals in the 14 counties (37 open, 3 closed). 39 have a bed count. Beds are the measure of supply. By default, closed hospitals and the one military hospital are excluded, and hospital types can be switched on or off in the left panel. Hospitals without a bed count are left out of Gravity and 2SFCA, which need beds.</p>
         <h3>Travel distance and time</h3>
         <ul>
           <li><b>Euclidean</b>: straight-line distance between the tract point and the hospital (projected coordinates, UTM zone 17N).</li>
           <li><b>Road network</b>: car routes from the r5py routing library (version 1.1.7) on an OpenStreetMap extract of NC and SC (Geofabrik, data timestamp 2026-11-08). Travel times use free-flow speeds, so traffic congestion is not included, and are rounded to whole minutes.</li>
-          <li>All 752 tracts &times; 40 hospitals = 30,080 pairs were computed once in advance. No pair is missing. The road distance is a median 1.37 times the straight-line distance.</li>
+          <li>All 752 tracts &times; 40 hospitals = 30,080 pairs were computed once in advance. The road distance is a median 1.37 times the straight-line distance.</li>
         </ul>
 
         <h2>Accessibility measures</h2>
@@ -183,6 +183,7 @@
           <li><b>Gravity</b>: <i>A<sub>i</sub></i> = &Sigma;<sub>j</sub> <i>S<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). Beds are weighted by how close they are. The score is in weighted beds and does not account for how many people compete for those beds.</li>
           <li><b>2SFCA</b> (two-step floating catchment area): first, for each hospital, <i>R<sub>j</sub></i> = <i>S<sub>j</sub></i> / &Sigma;<sub>k</sub> <i>P<sub>k</sub></i> &middot; <i>f</i>(<i>d<sub>kj</sub></i>), the beds per resident among all 752 tracts that can reach it. Second, for each tract, the score = 1,000 &times; &Sigma;<sub>j</sub> <i>R<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). The unit is beds per 1,000 people.</li>
         </ul>
+        <p><b>Edge effect at the county boundary</b>: residents of Mecklenburg tracts can use hospitals across the county line, and hospitals just outside the county serve Mecklenburg residents. To account for this, hospitals in all 14 counties are supply candidates for every measure except Container, and the 2SFCA demand step (<i>R<sub>j</sub></i>) uses the populations of all 752 tracts of the 14 counties. Only the 305 Mecklenburg tracts are displayed and summarized.</p>
         <p>Distance decay function <i>f</i>(<i>d</i>), with threshold <i>d</i><sub>0</sub> and coefficient &beta; set by the sliders:</p>
         <ul>
           <li><b>Binary</b>: 1 if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0.</li>
@@ -201,7 +202,6 @@
 
         <h2>Limitations</h2>
         <ul>
-          <li><b>Boundary effect</b>: demand and hospitals outside the 14 counties are not included. Tracts near the edge of the region may have access to hospitals or competing residents outside it that this model does not see. Including 14 counties reduces this effect compared with using Mecklenburg alone, but does not remove it.</li>
           <li><b>Supply is measured by beds only</b>: staffing, services (e.g., emergency care, specialties), insurance acceptance, and appointment availability are not included. Psychiatric, rehabilitation, and long-term care hospitals are included by default and count as beds like general acute care hospitals; these may not substitute for each other. Bed counts come from HIFLD records whose source dates vary by record.</li>
           <li><b>Travel</b>: car only, free-flow speeds, whole-minute times. Congestion, public transit, walking, and the cost of travel are not modeled. 19 of the 30,080 pairs have an average network speed above 120 km/h; the cause has not been identified. Very short trips may include extra time for snapping points to the road network.</li>
           <li><b>Date mismatch</b>: populations are 2024 ACS 5-year estimates; the OpenStreetMap road network is from November 2026. ACS margins of error are not used.</li>
@@ -212,6 +212,7 @@
 
         <h2>References</h2>
         <ul>
+          <li>Dai, D. (2010). Black residential segregation, disparities in spatial access to health care facilities, and late-stage breast cancer diagnosis in metropolitan Detroit. <i>Health &amp; Place</i>, 16(5), 1038&ndash;1052.</li>
           <li>Hansen, W. G. (1959). How accessibility shapes land use. <i>Journal of the American Institute of Planners</i>, 25(2), 73&ndash;76.</li>
           <li>Luo, W., &amp; Wang, F. (2003). Measures of spatial accessibility to health care in a GIS environment: synthesis and a case study in the Chicago region. <i>Environment and Planning B</i>, 30(6), 865&ndash;884.</li>
         </ul>
