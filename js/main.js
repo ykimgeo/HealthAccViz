@@ -211,7 +211,7 @@
           rows.push({ label: "Mean " + (fb.unit === "min" ? "travel time" : "travel distance"), value: (w / pop).toFixed(1) + " " + fb.unit });
           rows.push({ label: "Farthest tract", value: worst.toFixed(1) + " " + fb.unit });
         }
-        return { ids: ids, rows: rows, note: ids.size ? "Served = this hospital is the closest included hospital. Only Mecklenburg County tracts are counted. Mean is weighted by population." : "No Mecklenburg County tract has this hospital as its closest one." };
+        return { ids: ids, rows: rows, note: ids.size ? "Served = this hospital is the closest included hospital. Mean is weighted by population." : "No Mecklenburg County tract has this hospital as its closest one." };
       },
       // what to draw on the map for the selected tract: a line to the nearest hospital and a ring on it
       overlayFor: function (id) {
@@ -392,7 +392,7 @@
         }
         var note = !ids.size ? "No Mecklenburg County tract lies within the threshold of this hospital."
           : settings.method === "2sfca" ? "R = beds ÷ Σ(population × f(d)) over the tracts of all 14 counties around the hospital, times 1,000."
-          : "Highlighted tracts (Mecklenburg County) have a weight f(d) > 0 for this hospital.";
+          : "Highlighted tracts have a weight f(d) > 0 for this hospital.";
         return { ids: ids, rows: rows, note: note };
       },
       overlayFor: function (id) {
