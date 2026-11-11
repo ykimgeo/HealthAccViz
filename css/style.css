@@ -391,3 +391,13 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .btn-sec:disabled { opacity: .45; cursor: not-allowed; }
 .btn-sec:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tour-count { color: var(--muted); font-size: 12px; }
+
+/* anchored tour: the outline's huge shadow dims the page; the dialog is positioned by js/tour.js */
+.tour-spot {
+  position: fixed; z-index: 2001; pointer-events: none;
+  border: 2px solid #fff; border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(20, 28, 40, .55);
+}
+.tour-spot[hidden] { display: none; }
+.tour-overlay.is-anchored { background: transparent; display: block; padding: 0; }
+.tour-overlay.is-anchored .tour-box { position: fixed; z-index: 2002; }
