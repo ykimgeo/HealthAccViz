@@ -32,7 +32,7 @@
         "Circles are hospitals, and a larger circle means more beds.</p><ul>" +
         "<li>Click a tract to see its values and its nearest or contributing hospitals.</li>" +
         "<li>Click a hospital to highlight the tracts it serves.</li>" +
-        "<li>The panel at the top right switches the basemap (light gray, streets, satellite, topographic, dark) and shows or hides the tract and hospital layers.</li>" +
+        "<li>The panel at the top right switches the basemap (light gray, streets, satellite, topographic) and shows or hides the tract and hospital layers.</li>" +
         "<li>The legend (bottom-left of the map) can be collapsed. Use the <b>Controls</b> panel to show a single indicator instead.</li></ul>"
     },
     {

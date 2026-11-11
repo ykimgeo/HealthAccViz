@@ -22,9 +22,6 @@
     "Topographic": L.tileLayer(ESRI + "World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
       maxNativeZoom: 19, maxZoom: 18, attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, USGS, and others",
     }),
-    "Dark": L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      subdomains: "abcd", maxNativeZoom: 20, maxZoom: 18, attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-    }),
   };
   basemaps["Light gray"].addTo(map);
 
