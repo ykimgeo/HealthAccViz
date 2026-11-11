@@ -182,7 +182,7 @@
         if (i < b.length) return b[i - 1] + " – " + b[i];
         return "> " + b[b.length - 1];
       },
-      note: "Darker green = shorter = better access. Class upper bounds are inclusive. People = 2024 population (ACS).",
+      note: "Darker green = shorter = better access.",
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -257,7 +257,7 @@
       title: "Container: " + (isCount ? "number of hospitals" : "number of beds"),
       sub: cls.unit,
       labelFor: function (i) { return cls.labels[i]; },
-      note: "Darker green = more = better access. Class upper bounds are inclusive. People = 2024 population (ACS). Hospitals outside every tract are not counted.",
+      note: "Darker green = more = better access.",
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -331,7 +331,6 @@
       tip: function (v) { return v.toFixed(2) + " beds per 1,000 people"; },
       contribution: function (t) { return "f = " + t.f.toFixed(2) + " · R = " + t.r.toFixed(2); },
       contributionsTitle: "Largest contributions (R = beds per 1,000 people around the hospital)",
-      extraNote: " Demand = 2024 population of the tracts of all 14 counties around Mecklenburg. Hospitals near the outer edge of those counties still have incomplete catchments, so their R is overstated.",
     },
   };
 
@@ -358,8 +357,8 @@
         var hi = i < 4 ? ei.breaks[i] : ei.max;
         return lo.toFixed(dec) + " – " + hi.toFixed(dec);
       },
-      note: spec.noteStart + " Darker green = higher = better access. Five quantile classes (about the same number of tracts in each) computed from this result; class upper bounds are inclusive. Hospitals without a bed count are not in the supply. People = 2024 population (ACS)." +
-        (spec.extraNote || "") + (ei.flat ? " All tracts have the same score." : ""),
+      note: spec.noteStart + " Darker green = higher = better access. Five quantile classes." +
+        (ei.flat ? " All tracts have the same score." : ""),
       showPop: true,
       tooltipLine: function (p) {
         var r = results.get(p.id);
@@ -380,21 +379,19 @@
       serviceLegend: "Tract within the threshold of the selected hospital",
       serviceOf: function (hid) {
         var cat = Access.catchment(odByTract, hid, settings.basis, settings.impedance, { kind: settings.decay, d0: settings.d0, beta: settings.beta });
-        var ids = new Set(), pop = 0, popAll = 0, wpopAll = 0;
+        var ids = new Set(), pop = 0, wpopAll = 0;
         cat.forEach(function (c) {
           var dp = demandPop.get(c.tractId) || 0;
-          popAll += dp; wpopAll += dp * c.f; // every county: this is the demand behind R
+          wpopAll += dp * c.f; // demand of every county around the hospital: the denominator of R
           if (tractProps.has(c.tractId)) { ids.add(c.tractId); pop += popOf(c.tractId); }
         });
         var beds = hospitals.get(hid).beds;
         var rows = [{ label: "Tracts within threshold", value: String(ids.size), active: true }, { label: "People in those tracts (2024)", value: people(pop) }, { label: "Beds", value: fmt(beds) }];
         if (settings.method === "2sfca" && wpopAll > 0) {
-          rows.push({ label: "People within threshold, all counties", value: people(popAll) });
-          rows.push({ label: "People weighted by f(d), all counties", value: people(wpopAll) });
           rows.push({ label: "R: beds per 1,000 people", value: (1000 * beds / wpopAll).toFixed(2) });
         }
         var note = !ids.size ? "No Mecklenburg County tract lies within the threshold of this hospital."
-          : settings.method === "2sfca" ? "R = beds ÷ Σ(population × f(d)) over the tracts of all 14 counties around the hospital, times 1,000. Only Mecklenburg County tracts are highlighted."
+          : settings.method === "2sfca" ? "R = beds ÷ Σ(population × f(d)) over the tracts of all 14 counties around the hospital, times 1,000."
           : "Highlighted tracts (Mecklenburg County) have a weight f(d) > 0 for this hospital.";
         return { ids: ids, rows: rows, note: note };
       },
@@ -1111,7 +1108,7 @@
       L.control.layers(null, { "Tract boundaries": tractLayer, "Hospitals": hosp }, { collapsed: false }).addTo(map);
       initAccessPanel(res[1].features, res[3]);
       if (odError) setStatus("OD matrix failed to load: " + odError, true);
-      else setStatus(res[0].features.length + " Mecklenburg County tracts, " + res[1].features.length + " hospitals, " + demandPop.size + " demand tracts, OD matrix loaded.");
+      else setStatus(res[0].features.length + " Mecklenburg County tracts, " + res[1].features.length + " hospitals, OD matrix loaded.");
     })
     .catch(function (err) {
       console.error(err);
