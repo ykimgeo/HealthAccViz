@@ -407,3 +407,9 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .prose p { margin: 0 0 10px; }
 .prose ul { margin: 0 0 10px; padding-left: 20px; }
 .prose li { margin-bottom: 5px; }
+
+/* Phones render the page at a 1280px width (viewport meta). In portrait that makes the viewport
+   very tall, so cap the page height instead of stretching the three columns. */
+@media (max-aspect-ratio: 1/1) {
+  html, body { height: 820px; }
+}
