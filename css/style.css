@@ -5,7 +5,7 @@
   --muted: #5d6877;
   --border: #d9dde3;
   --accent: #1f5f8b;
-  --header-h: 56px;
+  --header-h: 72px;
   --footer-h: 32px;
   --left-w: 280px;
   --right-w: 360px;
@@ -36,8 +36,10 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
+.app-title { min-width: 0; }
 .app-title h1 { margin: 0; font-size: 18px; line-height: 1.2; }
 .app-title p { margin: 0; font-size: 12px; color: var(--muted); }
+.app-title .app-subtitle { font-size: 13px; color: var(--text); }
 
 .tabs { display: flex; gap: 4px; }
 .tab {

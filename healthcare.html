@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=1280">
-  <title>Healthcare Access Charlotte</title>
-  <meta name="description" content="Interactive GeoVisualization of healthcare access in Charlotte, NC (GIS Day 2026).">
+  <title>Same City, Different Answers: Hospital Accessibility in Mecklenburg County</title>
+  <meta name="description" content="Interactive GeoVisualization comparing hospital accessibility measures in Mecklenburg County, NC (GIS Day 2026).">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="css/style.css">
@@ -12,7 +12,8 @@
 <body>
   <header class="app-header">
     <div class="app-title">
-      <h1>Healthcare Access in Charlotte</h1>
+      <h1>Same City, Different Answers: Comparing Hospital Accessibility in Mecklenburg County</h1>
+      <p class="app-subtitle">Closest facility, Container, Gravity, and 2SFCA at the Census tract level</p>
       <p>Author: Yunsik Kim, PhD Student in Geography, UNC Charlotte</p>
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
@@ -155,7 +156,8 @@
     <section id="view-methods" class="view methods" role="tabpanel" aria-labelledby="tab-methods" hidden>
       <article class="prose">
         <h2>Purpose</h2>
-        <p>Healthcare accessibility is not one number. The result depends on what is being asked (how far is the nearest hospital, how many hospitals are inside the tract, how many beds are within reach, how many beds there are per resident) and on the settings used to answer it. This dashboard computes four common measures for the 305 Census tracts of Mecklenburg County, NC, so that the same place can be compared across measures, distance bases (Euclidean or road network), travel impedances (distance or time), and distance decay functions.</p>
+        <p>Whether residents can reach a hospital in time affects when they receive emergency care, surgery, and treatment for serious illness. Hospitals are not spread evenly across a region, so residents of some neighborhoods travel much farther than others. Planners and health agencies use accessibility measures to find neighborhoods with poor access and to decide where hospitals or beds are needed.</p>
+        <p>Accessibility is not one number. The result depends on what is being asked (how far is the nearest hospital, how many hospitals are inside the tract, how many beds are within reach, how many beds there are per resident) and on the settings used to answer it. This dashboard computes four common measures for the 305 Census tracts of Mecklenburg County, NC, so that the same place can be compared across measures, distance bases (Euclidean or road network), travel impedances (distance or time), and distance decay functions.</p>
 
         <h2>Data</h2>
         <h3>Demand: residents</h3>
