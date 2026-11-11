@@ -40,13 +40,24 @@
   "qa": {
     "pairs": 30080,
     "pairs_expected": 30080,
-    "pairs_missing_network": 40,
+    "pairs_missing_network": 0,
     "pairs_zero_minutes_but_over_1km": 0,
     "circuity_ratio_network_over_euclid": {
       "min": 1.043,
       "median": 1.368,
-      "max": 4.79,
+      "p95": 1.656,
+      "max": 4.788,
       "share_below_0.95": 0.0
     }
+  },
+  "origin_fallback": {
+    "origins_with_no_route": [
+      "37071032508"
+    ],
+    "rerouted_from_census_internal_point": [
+      "37071032508"
+    ],
+    "still_without_route": [],
+    "note": "Network cost routed from the Census internal point; Euclidean distance still from the population-weighted centroid."
   }
 }
