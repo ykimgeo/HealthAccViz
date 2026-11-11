@@ -430,7 +430,6 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .help-btn { background: transparent; border-color: var(--gold-light); color: #fff; }
 .help-btn:hover { background: var(--gold); border-color: var(--gold); color: #fff; }
 .card h2 { color: var(--accent); }
-.card { border-top: 3px solid var(--gold); }
 .btn { border-color: var(--accent); background: var(--accent); }
 .btn-sec { color: var(--accent); }
 .tour-box { border-top: 4px solid var(--gold); }
