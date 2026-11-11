@@ -185,6 +185,7 @@
           <li><b>2SFCA</b> (two-step floating catchment area): first, for each hospital, <i>R<sub>j</sub></i> = <i>S<sub>j</sub></i> / &Sigma;<sub>k</sub> <i>P<sub>k</sub></i> &middot; <i>f</i>(<i>d<sub>kj</sub></i>), the beds per resident among all 752 tracts that can reach it. Second, for each tract, the score = 1,000 &times; &Sigma;<sub>j</sub> <i>R<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). The unit is beds per 1,000 people.</li>
         </ul>
         <p><b>Edge effect at the county boundary</b>: residents of Mecklenburg tracts can use hospitals across the county line, and hospitals just outside the county serve Mecklenburg residents. To account for this, hospitals in all 14 counties are supply candidates for every measure except Container, and the 2SFCA demand step (<i>R<sub>j</sub></i>) uses the populations of all 752 tracts of the 14 counties. Only the 305 Mecklenburg tracts are displayed and summarized.</p>
+        <p><b>Role of the distance decay function</b>: Gravity and 2SFCA do not count every bed equally. A distance decay function <i>f</i>(<i>d</i>) converts the distance or time from a tract to a hospital into a weight between 0 and 1, and the beds of that hospital are multiplied by this weight. A nearby hospital gets a weight close to 1, a distant hospital a weight close to 0, and a hospital beyond the threshold <i>d</i><sub>0</sub> gets 0 (it is outside the catchment). The reasoning follows Tobler's First Law of Geography: &ldquo;everything is related to everything else, but near things are more related than distant things.&rdquo; Applied here, residents are assumed to use nearby hospitals more than distant ones, so a bed close to a tract adds more to its access than a bed far away. The three functions below differ in how fast the weight falls with distance.</p>
         <p>Distance decay function <i>f</i>(<i>d</i>), with threshold <i>d</i><sub>0</sub> and coefficient &beta; set by the sliders:</p>
         <ul>
           <li><b>Binary</b>: 1 if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0.</li>
@@ -216,6 +217,7 @@
           <li>Dai, D. (2010). Black residential segregation, disparities in spatial access to health care facilities, and late-stage breast cancer diagnosis in metropolitan Detroit. <i>Health &amp; Place</i>, 16(5), 1038&ndash;1052.</li>
           <li>Hansen, W. G. (1959). How accessibility shapes land use. <i>Journal of the American Institute of Planners</i>, 25(2), 73&ndash;76.</li>
           <li>Luo, W., &amp; Wang, F. (2003). Measures of spatial accessibility to health care in a GIS environment: synthesis and a case study in the Chicago region. <i>Environment and Planning B</i>, 30(6), 865&ndash;884.</li>
+          <li>Tobler, W. R. (1970). A computer movie simulating urban growth in the Detroit region. <i>Economic Geography</i>, 46(sup1), 234&ndash;240.</li>
         </ul>
 
         <h2>Statement of AI use</h2>

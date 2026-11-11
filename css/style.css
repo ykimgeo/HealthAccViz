@@ -432,7 +432,6 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .card h2 { color: var(--accent); }
 .btn { border-color: var(--accent); background: var(--accent); }
 .btn-sec { color: var(--accent); }
-.tour-box { border-top: 4px solid var(--gold); }
 .tour-box h2 { color: var(--accent); }
 .tour-overlay { background: rgba(8, 32, 24, .6); }
 .tour-spot { box-shadow: 0 0 0 9999px rgba(8, 32, 24, .6); border-color: var(--gold-light); }
