@@ -34,7 +34,7 @@
               <option value="closest">Closest facility</option>
               <option value="container">Container</option>
               <option value="gravity">Gravity</option>
-              <option value="2sfca">2SFCA</option>
+              <option value="2sfca">2SFCA (Two-Step Floating Catchment Area)</option>
             </select>
           </label>
           <label class="field" id="field-measure" hidden>
@@ -135,7 +135,13 @@
         </section>
         <section class="card" id="panel-charts">
           <h2>Charts</h2>
-          <p class="placeholder">Ranking and scatter plot</p>
+          <div id="chart-controls" hidden>
+            <label class="field">
+              <span>Indicator (x axis)</span>
+              <select id="sel-chart-x"></select>
+            </label>
+          </div>
+          <div id="chart-area"><p class="placeholder">Apply an accessibility measure to see how it relates to the indicators.</p></div>
         </section>
         <section class="card" id="panel-detail">
           <h2>Selection</h2>
@@ -165,6 +171,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="js/access.js"></script>
+  <script src="js/stats.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

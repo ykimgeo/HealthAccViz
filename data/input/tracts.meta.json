@@ -33,6 +33,7 @@
     "missing_indicator_values": {
       "pop_density": 0,
       "older_adult_pct": 2,
+      "median_age": 3,
       "household_income": 3
     }
   },

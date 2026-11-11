@@ -9,7 +9,7 @@ unit of analysis. Only Mecklenburg County tracts are drawn on the map; every tra
 is a demand point for the accessibility calculations.
 
 Inputs (data/raw)
-  cre/total-population.json, population-density-sqmi.json, older-adults.json, household-income.json
+  cre/total-population.json, population-density-sqmi.json, older-adults.json, median-age.json, household-income.json
                               CRE tract indicators, 2024 (ACS 5-year based)
   cre/acs5-nc-bg-b01001.json, acs5-sc-bg-b01001.json
                               ACS block-group tables; B01001_001E = total population
@@ -150,6 +150,7 @@ def prepare_tracts():
     dens, _ = indicator("population-density-sqmi.json")
     old, _ = indicator("older-adults.json")
     inc, _ = indicator("household-income.json")
+    age, _ = indicator("median-age.json")
     m = tr[tr.index.str[:5] == MECK].copy()
     assert len(m) == sum(1 for g in pop_t if g[:5] == MECK)
     m_utm = m.geometry.to_crs(UTM)
@@ -168,13 +169,14 @@ def prepare_tracts():
                 "pop": int(pop_t[g]),
                 "pop_density": dens.get(g),  # people per square mile
                 "older_adult_pct": old.get(g),  # share aged 65+, percent
+                "median_age": age.get(g),  # median age, years
                 "household_income": inc.get(g),  # median household income, US dollars
             },
             "geometry": geom,
         })
     write_json(os.path.join(OUT, "tracts_mecklenburg.geojson"), {"type": "FeatureCollection", "features": feats})
     kb = os.path.getsize(os.path.join(OUT, "tracts_mecklenburg.geojson")) / 1024
-    nulls = {k: sum(f["properties"][k] is None for f in feats) for k in ("pop_density", "older_adult_pct", "household_income")}
+    nulls = {k: sum(f["properties"][k] is None for f in feats) for k in ("pop_density", "older_adult_pct", "median_age", "household_income")}
     print(f"  tracts_mecklenburg.geojson: {len(feats)} polygons, {kb:.0f} KB, area change by simplification {area_diff:+.3f}%, missing values {nulls}")
     print(f"  Mecklenburg population {sum(f['properties']['pop'] for f in feats):,}")
     return {

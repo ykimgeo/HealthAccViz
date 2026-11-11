@@ -71,6 +71,7 @@
     { key: "pop", label: "Population (2024)", decimals: 0, prefix: "", suffix: "", legendUnit: "people" },
     { key: "pop_density", label: "Population density (2024)", decimals: 0, prefix: "", suffix: " people/sq mi", legendUnit: "people per square mile (land area)" },
     { key: "older_adult_pct", label: "Aged 65+ (2024)", decimals: 1, prefix: "", suffix: "%", legendUnit: "%" },
+    { key: "median_age", label: "Median age (2024)", decimals: 1, prefix: "", suffix: " years", legendUnit: "years" },
     { key: "household_income", label: "Household income (2024)", decimals: 0, prefix: "$", suffix: "", legendUnit: "US dollars" },
   ];
 
@@ -80,6 +81,7 @@
   var selected = null;
   var selectedHosp = null;   // hid of the selected hospital (never together with a selected tract)
   var highlightIds = null;   // Set of tract ids served by the selected hospital
+  var tractLayerById = new Map(); // tract id -> Leaflet layer, so the chart can highlight a tract on the map
   var tractProps = new Map();  // tract id -> properties of the Mecklenburg County tracts drawn on the map
   var demandPop = new Map();   // tract id -> 2024 population, all tracts of the 14 counties (demand for 2SFCA)
 
@@ -172,6 +174,8 @@
       settings: settings,
       results: results,
       unit: fb.unit,
+      higherIsBetter: false, // a longer trip is worse access; the chart reverses the sign
+      axisName: (settings.impedance === "time" ? "Travel time" : "Travel distance") + " to nearest hospital",
       colors: ACCESS_COLORS,
       valueOf: function (p) { return results.has(p.id) ? results.get(p.id).cost : null; },
       classOf: function (v) { return Access.classifyFixed(v, b); },
@@ -248,6 +252,8 @@
       settings: settings,
       results: results,
       unit: cls.unit,
+      higherIsBetter: true,
+      axisName: isCount ? "Hospitals in the tract" : "Beds in the tract",
       colors: colors,
       valueOf: function (p) {
         var r = results.get(p.id);
@@ -314,6 +320,7 @@
   var SCORE_SPECS = {
     gravity: {
       title: "Gravity: access score (Σ beds × f(d))",
+      axisName: "Gravity access score",
       unitText: "weighted beds",
       noteStart: "Score = Σ(beds × f(d)), the beds of every included hospital weighted by distance decay.",
       score: function (v) { return fmt(Math.round(v)); },
@@ -324,6 +331,7 @@
     },
     "2sfca": {
       title: "2SFCA: beds per 1,000 people",
+      axisName: "2SFCA beds per 1,000 people",
       unitText: "beds per 1,000 people",
       noteStart: "Step 1: for each hospital, R = beds ÷ Σ(population × f(d)) of the tracts around it. Step 2: score = 1,000 × Σ(R × f(d)) over the hospitals around the tract.",
       score: function (v) { return v.toFixed(2); },
@@ -346,6 +354,8 @@
       settings: settings,
       results: results,
       unit: unit,
+      higherIsBetter: true,
+      axisName: spec.axisName,
       colors: YLGN,
       valueOf: function (p) { var r = results.get(p.id); return r ? r.score : null; },
       classOf: function (v) { return ei.flat ? 4 : Access.classifyFixed(v, ei.breaks); },
@@ -638,6 +648,172 @@
     box.appendChild(el("p", "legend-note", s.note));
   }
 
+  // ---------- Charts card: access score vs. one indicator (standardized), with marginal histograms ----------
+  // Bivariate 3 x 3 colours (pink-blue): BIV[x class][y class], class 0 = lowest tercile.
+  var BIV = [
+    ["#e8e8e8", "#dfb0d6", "#be64ac"],
+    ["#ace4e4", "#a5add3", "#8c62aa"],
+    ["#5ac8c8", "#5698b9", "#3b4994"],
+  ];
+  var chartDots = new Map(); // tract id -> { el, row }
+  var chartHoverId = null;
+  var selChartX = byId("sel-chart-x");
+  INDICATORS.forEach(function (ind) {
+    var o = el("option", null, ind.label);
+    o.value = ind.key;
+    selChartX.appendChild(o);
+  });
+  selChartX.value = "pop_density";
+  selChartX.addEventListener("change", updateChart);
+
+  function fmtR(v) { return v === null ? "–" : (v < 0 ? "−" : "") + Math.abs(v).toFixed(2); }
+
+  // A dot is hovered: outline the tract on the map. (The map's own hover calls chartHover.)
+  function mapHover(id, on) {
+    var layer = tractLayerById.get(id);
+    if (!layer || layer === selected) return;
+    if (on) { layer.setStyle(HOVER_STYLE); layer.bringToFront(); } else tractLayer.resetStyle(layer);
+  }
+
+  // A tract is hovered on the map (id) or the pointer left it (null): enlarge its dot in the chart.
+  function chartHover(id, fromChart) {
+    var prev = chartDots.get(chartHoverId);
+    if (prev) { prev.el.setAttribute("r", "3"); prev.el.setAttribute("stroke", "none"); prev.el.setAttribute("fill-opacity", "0.9"); }
+    chartHoverId = id;
+    var d = chartDots.get(id);
+    if (!d) return;
+    d.el.setAttribute("r", "6");
+    d.el.setAttribute("stroke", "#111");
+    d.el.setAttribute("stroke-width", "1.6");
+    d.el.setAttribute("fill-opacity", "1");
+    if (!fromChart) d.el.parentNode.appendChild(d.el); // from the map: draw it on top (moving the dot under the pointer would flicker the hover)
+  }
+
+  function updateChart() {
+    var area = byId("chart-area");
+    area.replaceChildren();
+    chartDots.clear();
+    chartHoverId = null;
+    var controls = byId("chart-controls");
+    if (!current || current.kind !== "access") {
+      controls.hidden = true;
+      area.appendChild(el("p", "placeholder", "Apply an accessibility measure to see how it relates to the indicators."));
+      return;
+    }
+    controls.hidden = false;
+    var ind = INDICATORS.filter(function (i) { return i.key === selChartX.value; })[0];
+    var sign = current.higherIsBetter === false ? -1 : 1; // every axis reads "higher = better access"
+    var yName = current.axisName + (sign < 0 ? " (sign reversed: higher = shorter)" : "");
+    var rows = [];
+    tractFeatures.forEach(function (f) {
+      var p = f.properties, xv = p[ind.key], yv = current.valueOf(p);
+      if (xv === null || xv === undefined || yv === null || yv === undefined) return;
+      rows.push({ id: p.id, p: p, x: xv, y: sign * yv });
+    });
+    var xs = rows.map(function (r) { return r.x; }), ys = rows.map(function (r) { return r.y; });
+    var zx = Stats.zscores(xs), zy = Stats.zscores(ys);
+
+    area.appendChild(el("p", "chart-title", "Correlation"));
+    area.appendChild(el("p", "chart-sub", ind.label + " × " + yName));
+    if (!zx || !zy) {
+      area.appendChild(el("p", "placeholder", "The " + (!zy ? "access score" : ind.label) + " has the same value in every tract, so there is no correlation to show."));
+      return;
+    }
+    area.appendChild(el("p", "chart-hint", "Hover a tract or dot"));
+
+    var pr = Stats.pearson(xs, ys), sp = Stats.spearman(xs, ys);
+    var bx = Access.quantiles(xs, 3).breaks, by = Access.quantiles(ys, 3).breaks;
+    rows.forEach(function (r, i) { r.zx = zx[i]; r.zy = zy[i]; r.cx = Access.classifyFixed(r.x, bx); r.cy = Access.classifyFixed(r.y, by); });
+
+    // geometry (viewBox units)
+    var W = 330, H = 312, L = 34, T = 46, PW = 232, PH = 232, GAP = 4, BINS = 18;
+    var x0 = Math.min.apply(null, zx) - 0.3, x1 = Math.max.apply(null, zx) + 0.3;
+    var y0 = Math.min.apply(null, zy) - 0.3, y1 = Math.max.apply(null, zy) + 0.3;
+    function X(z) { return L + ((z - x0) / (x1 - x0)) * PW; }
+    function Y(z) { return T + PH - ((z - y0) / (y1 - y0)) * PH; }
+
+    var wrap = el("div", "chart-wrap");
+    var svg = svgEl("svg", { class: "chart-svg", viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Scatter plot of standardized values with marginal histograms" });
+    var clip = svgEl("clipPath", { id: "chart-clip" });
+    clip.appendChild(svgEl("rect", { x: L, y: T, width: PW, height: PH }));
+    svg.appendChild(clip);
+    // grid and tick labels at z = -4, -2, 0, 2, 4
+    [-4, -2, 0, 2, 4].forEach(function (t) {
+      if (t > x0 && t < x1) {
+        svg.appendChild(svgEl("line", { class: "grid", x1: X(t), y1: T, x2: X(t), y2: T + PH }));
+        svg.appendChild(svgEl("text", { x: X(t), y: T + PH + 13, "text-anchor": "middle" }, String(t)));
+      }
+      if (t > y0 && t < y1) {
+        svg.appendChild(svgEl("line", { class: "grid", x1: L, y1: Y(t), x2: L + PW, y2: Y(t) }));
+        svg.appendChild(svgEl("text", { x: L - 5, y: Y(t) + 3, "text-anchor": "end" }, String(t)));
+      }
+    });
+    svg.appendChild(svgEl("rect", { class: "frame", x: L, y: T, width: PW, height: PH }));
+    // marginal histograms: x on top, y on the right
+    var hx = Stats.histogram(zx, x0, x1, BINS), hy = Stats.histogram(zy, y0, y1, BINS);
+    var mx = Math.max.apply(null, hx), my = Math.max.apply(null, hy), bw = PW / BINS, bh = PH / BINS;
+    hx.forEach(function (n, i) {
+      var h = (n / mx) * (T - GAP - 6);
+      svg.appendChild(svgEl("rect", { class: "bar", x: L + i * bw + 0.5, y: T - GAP - h, width: bw - 1, height: h }));
+    });
+    hy.forEach(function (n, i) {
+      var w = (n / my) * (W - (L + PW + GAP) - 4);
+      svg.appendChild(svgEl("rect", { class: "bar", x: L + PW + GAP, y: T + PH - (i + 1) * bh + 0.5, width: w, height: bh - 1 }));
+    });
+    // linear trend of the standardized values: y = r x
+    svg.appendChild(svgEl("line", { class: "trend", "clip-path": "url(#chart-clip)", x1: X(x0), y1: Y(pr * x0), x2: X(x1), y2: Y(pr * x1) }));
+    var tip = el("div", "chart-tip");
+    tip.hidden = true;
+    var dots = svgEl("g", {});
+    rows.forEach(function (r) {
+      var c = svgEl("circle", { class: "dot", cx: X(r.zx), cy: Y(r.zy), r: 3, fill: BIV[r.cx][r.cy], "fill-opacity": 0.9, stroke: "none" });
+      c.addEventListener("mouseenter", function (e) {
+        mapHover(r.id, true);
+        chartHover(r.id, true);
+        tip.replaceChildren(el("div", "t", r.p.name), el("div", null, ind.label + ": " + (formatValue(ind, r.x) || "No data")), el("div", null, current.tooltipLine(r.p)));
+        tip.hidden = false;
+        var b = wrap.getBoundingClientRect(), dx = e.clientX - b.left, dy = e.clientY - b.top;
+        tip.style.left = Math.max(0, Math.min(dx + 12, b.width - tip.offsetWidth)) + "px";
+        tip.style.top = Math.max(0, dy - tip.offsetHeight - 10) + "px";
+      });
+      c.addEventListener("mouseleave", function () { mapHover(r.id, false); chartHover(null); tip.hidden = true; });
+      dots.appendChild(c);
+      chartDots.set(r.id, { el: c, row: r });
+    });
+    svg.appendChild(dots);
+    wrap.appendChild(svg);
+    wrap.appendChild(tip);
+    area.appendChild(wrap);
+
+    // coefficients
+    var stats = el("div", "chart-stats");
+    stats.appendChild(el("span", "lbl", "Correlation"));
+    stats.appendChild(el("strong", null, "Pearson " + fmtR(pr) + " · Spearman " + fmtR(sp)));
+    area.appendChild(stats);
+    area.appendChild(el("p", "chart-n", "n = " + rows.length + " of " + tractFeatures.length + " tracts" + (rows.length < tractFeatures.length ? " (tracts without a value are left out)" : "")));
+
+    // bivariate legend: columns = indicator tercile, rows = access tercile (top row = highest)
+    var leg = el("div", "biv-legend");
+    var grid = el("div", "biv-grid");
+    for (var yc = 2; yc >= 0; yc--) for (var xc = 0; xc < 3; xc++) {
+      var cell = el("span");
+      cell.style.background = BIV[xc][yc];
+      grid.appendChild(cell);
+    }
+    leg.appendChild(grid);
+    var txt = el("div", "biv-text");
+    txt.appendChild(el("div", null, "→ " + ind.label + ": low to high"));
+    txt.appendChild(el("div", null, "↑ " + current.axisName + ": " + (sign < 0 ? "long to short trip" : "low to high")));
+    txt.appendChild(el("div", null, "Terciles of each variable"));
+    leg.appendChild(txt);
+    area.appendChild(leg);
+
+    area.appendChild(el("p", "chart-note", "x: " + ind.label + " · y: " + yName + " (standardized, z-scores)"));
+    var top = Stats.topShare(ys);
+    if (top > 0.5) area.appendChild(el("p", "chart-note warn", Math.round(100 * top) + "% of the tracts share one score, so the rank correlation is not informative."));
+    area.appendChild(el("p", "chart-note italic", "Descriptive only: tracts are spatially autocorrelated, so this is not a significance test. Every tract counts equally."));
+  }
+
   function setLayer(layer) {
     current = layer;
     if (selectedHosp) renderHospSelection(); // sets highlightIds for the new layer
@@ -649,6 +825,7 @@
     updateLegend();
     updateLink();
     updateSummary();
+    updateChart();
   }
 
   // ---------- choropleth radio list ----------
@@ -688,10 +865,11 @@
       style: baseStyle,
       bubblingMouseEvents: false, // a click on a polygon must not reach the map's own click handler
       onEachFeature: function (feature, layer) {
+        tractLayerById.set(feature.properties.id, layer);
         layer.bindTooltip(tooltipFor, { sticky: true });
         layer.on({
-          mouseover: function () { if (layer !== selected) layer.setStyle(HOVER_STYLE); },
-          mouseout: function () { if (layer !== selected) tractLayer.resetStyle(layer); },
+          mouseover: function () { if (layer !== selected) layer.setStyle(HOVER_STYLE); chartHover(feature.properties.id); },
+          mouseout: function () { if (layer !== selected) tractLayer.resetStyle(layer); chartHover(null); },
           click: function () { selectTract(layer); },
         });
       },
