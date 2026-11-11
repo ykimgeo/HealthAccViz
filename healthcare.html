@@ -154,12 +154,70 @@
     <!-- Methods view: write-up -->
     <section id="view-methods" class="view methods" role="tabpanel" aria-labelledby="tab-methods" hidden>
       <article class="prose">
-        <h2>Data overview</h2>
-        <p class="placeholder">Data sources, years, units, preprocessing</p>
-        <h2>Interpretation</h2>
-        <p class="placeholder">How to read the map</p>
-        <h2>Summary</h2>
-        <p class="placeholder">Main findings</p>
+        <h2>Purpose</h2>
+        <p>Healthcare accessibility is not one number. The result depends on what is being asked (how far is the nearest hospital, how many hospitals are inside the tract, how many beds are within reach, how many beds there are per resident) and on the settings used to answer it. This dashboard computes four common measures for the 305 Census tracts of Mecklenburg County, NC, so that the same place can be compared across measures, distance bases (Euclidean or road network), travel impedances (distance or time), and distance decay functions.</p>
+
+        <h2>Data</h2>
+        <h3>Demand: residents</h3>
+        <ul>
+          <li><b>Unit of analysis</b>: Census tract. Results are shown only for the 305 tracts of Mecklenburg County (2024 population: 1,154,681).</li>
+          <li><b>Population and indicators</b>: Carolinas Regional Explorer (UNC Charlotte Urban Institute), 2024 tract indicators based on the American Community Survey (ACS) 5-year estimates: total population, population density, share aged 65+, median age, and household income.</li>
+          <li><b>Surrounding counties</b>: Mecklenburg County and 13 surrounding counties (11 counties in NC including Mecklenburg, 3 in SC; 752 tracts in total) are used as demand and as route origins in the calculations. Their tracts are not drawn on the map.</li>
+        </ul>
+        <h3>Origins: where residents are located</h3>
+        <p>Each tract is represented by one point, the population-weighted centroid of its block groups. The weights are 2024 ACS block-group populations (table B01001, total population; 1,813 block groups). Each block group is located at its U.S. Census Bureau TIGER/Line 2024 internal point. Block-group populations sum exactly to the tract populations for all 752 tracts. Three centroids fall outside their tract polygon (at most 144 m).</p>
+        <h3>Supply: hospitals</h3>
+        <p>HIFLD hospital layer: 40 hospitals in the 14 counties (37 open, 3 closed). 39 have a bed count. Beds are the measure of supply. By default, closed hospitals and the one military hospital are excluded, and hospital types can be switched on or off in the left panel. Hospitals without a bed count are left out of Gravity and 2SFCA, which need beds.</p>
+        <h3>Travel distance and time</h3>
+        <ul>
+          <li><b>Euclidean</b>: straight-line distance between the tract point and the hospital (projected coordinates, UTM zone 17N).</li>
+          <li><b>Road network</b>: car routes from the r5py routing library (version 1.1.7) on an OpenStreetMap extract of NC and SC (Geofabrik, data timestamp 2026-11-08). Travel times use free-flow speeds, so traffic congestion is not included, and are rounded to whole minutes.</li>
+          <li>All 752 tracts &times; 40 hospitals = 30,080 pairs were computed once in advance. No pair is missing. The road distance is a median 1.37 times the straight-line distance.</li>
+        </ul>
+
+        <h2>Accessibility measures</h2>
+        <p>Let <i>i</i> be a tract, <i>j</i> a hospital, <i>d<sub>ij</sub></i> the distance or time from the tract point to the hospital (according to the selected basis and impedance), <i>S<sub>j</sub></i> the beds of hospital <i>j</i>, and <i>P<sub>k</sub></i> the population of tract <i>k</i>.</p>
+        <ul>
+          <li><b>Closest facility</b>: <i>d<sub>ij</sub></i> to the nearest included hospital. Lower is better. Ties are broken by road distance, then straight-line distance.</li>
+          <li><b>Container</b>: the number of hospitals (or beds) whose location lies inside the tract boundary. Distance is not used.</li>
+          <li><b>Gravity</b>: <i>A<sub>i</sub></i> = &Sigma;<sub>j</sub> <i>S<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). Beds are weighted by how close they are. The score is in weighted beds and does not account for how many people compete for those beds.</li>
+          <li><b>2SFCA</b> (two-step floating catchment area): first, for each hospital, <i>R<sub>j</sub></i> = <i>S<sub>j</sub></i> / &Sigma;<sub>k</sub> <i>P<sub>k</sub></i> &middot; <i>f</i>(<i>d<sub>kj</sub></i>), the beds per resident among all 752 tracts that can reach it. Second, for each tract, the score = 1,000 &times; &Sigma;<sub>j</sub> <i>R<sub>j</sub></i> &middot; <i>f</i>(<i>d<sub>ij</sub></i>). The unit is beds per 1,000 people.</li>
+        </ul>
+        <p>Distance decay function <i>f</i>(<i>d</i>), with threshold <i>d</i><sub>0</sub> and coefficient &beta; set by the sliders:</p>
+        <ul>
+          <li><b>Binary</b>: 1 if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0.</li>
+          <li><b>Negative exponential</b>: exp(&minus;&beta;<i>d</i>) if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0.</li>
+          <li><b>Gaussian</b>: [exp(&minus;&frac12;(<i>d</i>/<i>d</i><sub>0</sub>)<sup>2</sup>) &minus; exp(&minus;&frac12;)] / [1 &minus; exp(&minus;&frac12;)] if <i>d</i> &le; <i>d</i><sub>0</sub>, otherwise 0. It falls from 1 at <i>d</i> = 0 to 0 at <i>d</i><sub>0</sub>.</li>
+        </ul>
+        <p>Default settings are <i>d</i><sub>0</sub> = 30 min or 20 km, and &beta; = 0.05 per min or 0.1 per km. These are starting values for exploration, not values estimated from patient data. A tract with no route to a hospital is treated as unreachable.</p>
+
+        <h2>How to read the dashboard</h2>
+        <ul>
+          <li><b>Map colors</b>: darker green = better access. Closest facility and Container use fixed classes (Closest: 5, 10, 15, 20 min or 3, 6, 9, 12 km). Gravity and 2SFCA use five quantile classes computed over the 305 displayed tracts, so each class holds about one fifth of the tracts. The class limits therefore change with every setting, and colors cannot be compared between two settings without reading the legend.</li>
+          <li><b>Summary</b>: population-weighted mean, median, and share of residents within cutoffs, over the 305 Mecklenburg tracts. Each tract is weighted by its 2024 population.</li>
+          <li><b>Selection</b>: click a tract to see its value and contributing hospitals, or click a hospital to highlight the tracts it serves. A tract and a hospital are never selected together.</li>
+          <li><b>Charts</b>: each dot is a tract. The accessibility score and the indicator are standardized (z-scores) so that units match. Pearson and Spearman correlations are shown, and tracts count equally (not population-weighted). For Closest facility the y axis is sign-reversed so that higher always means better access. Dot colors use a 3&times;3 bivariate scheme with tercile classes.</li>
+        </ul>
+
+        <h2>Limitations</h2>
+        <ul>
+          <li><b>Boundary effect</b>: demand and hospitals outside the 14 counties are not included. Tracts near the edge of the region may have access to hospitals or competing residents outside it that this model does not see. Including 14 counties reduces this effect compared with using Mecklenburg alone, but does not remove it.</li>
+          <li><b>Supply is measured by beds only</b>: staffing, services (e.g., emergency care, specialties), insurance acceptance, and appointment availability are not included. Psychiatric, rehabilitation, and long-term care hospitals are included by default and count as beds like general acute care hospitals; these may not substitute for each other. Bed counts come from HIFLD records whose source dates vary by record.</li>
+          <li><b>Travel</b>: car only, free-flow speeds, whole-minute times. Congestion, public transit, walking, and the cost of travel are not modeled. 19 of the 30,080 pairs have an average network speed above 120 km/h; the cause has not been identified. Very short trips may include extra time for snapping points to the road network.</li>
+          <li><b>Date mismatch</b>: populations are 2024 ACS 5-year estimates; the OpenStreetMap road network is from November 2026. ACS margins of error are not used.</li>
+          <li><b>Location error</b>: each tract is one point, a block-group-weighted centroid, and the block groups are located at their internal points. This is an approximation of where people live inside a tract (aggregation and zoning effects of the tract unit are not examined).</li>
+          <li><b>Parameters are assumed</b>: threshold and decay settings are chosen by the user and not validated against observed patient travel.</li>
+          <li><b>Correlations are descriptive</b>: tracts are spatially autocorrelated, so the correlation coefficients are not significance tests and do not show cause. Container results mostly equal zero, so rank correlations are not informative there (the chart shows a warning).</li>
+        </ul>
+
+        <h2>References</h2>
+        <ul>
+          <li>Hansen, W. G. (1959). How accessibility shapes land use. <i>Journal of the American Institute of Planners</i>, 25(2), 73&ndash;76.</li>
+          <li>Luo, W., &amp; Wang, F. (2003). Measures of spatial accessibility to health care in a GIS environment: synthesis and a case study in the Chicago region. <i>Environment and Planning B</i>, 30(6), 865&ndash;884.</li>
+        </ul>
+
+        <h2>Statement of AI use</h2>
+        <p>This dashboard was built with Claude Sonnet 5.5 (Anthropic), used through Claude Code. The AI model wrote the code for the web application and the data-processing scripts and drafted the text on this page. The author, Yunsik Kim, is responsible for the content: the author specified the design and the analysis choices and reviewed, revised, and confirmed the results and text.</p>
       </article>
     </section>
   </main>
