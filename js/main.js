@@ -14,6 +14,9 @@
     attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
   }).addTo(map);
 
+  // Scale bar (km and mi), bottom-right so it does not sit under the legend.
+  L.control.scale({ position: "bottomright", metric: true, imperial: true, maxWidth: 140 }).addTo(map);
+
   // ----- helpers -----
   function el(tag, className, text) {
     var e = document.createElement(tag);
