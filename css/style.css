@@ -1,10 +1,12 @@
 :root {
-  --bg: #f4f5f7;
+  --bg: #f5f4ef;
   --surface: #ffffff;
-  --text: #1c2430;
-  --muted: #5d6877;
-  --border: #d9dde3;
-  --accent: #1f5f8b;
+  --text: #1f2a25;
+  --muted: #5f655d;
+  --border: #dcd8c9;
+  --accent: #005035;
+  --gold: #a49665;
+  --gold-light: #d9d0b0;
   --header-h: 72px;
   --footer-h: 32px;
   --left-w: 280px;
@@ -291,8 +293,8 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 .decay-preview { display: block; width: 100%; height: auto; margin-top: 4px; }
 .decay-preview text { font: 10px system-ui, sans-serif; fill: var(--muted); }
 .decay-preview .axis { stroke: var(--border); stroke-width: 1; }
-.decay-preview .curve { fill: none; stroke: var(--accent); stroke-width: 2; }
-.decay-preview .area { fill: var(--accent); opacity: .12; }
+.decay-preview .curve { fill: none; stroke: #1f5f8b; stroke-width: 2; }
+.decay-preview .area { fill: #1f5f8b; opacity: .12; }
 .params[hidden], .param[hidden] { display: none; }
 
 .summary-title { margin-top: 0; }
@@ -415,3 +417,27 @@ main { flex: 1 1 auto; min-height: 0; display: flex; }
 @media (max-aspect-ratio: 1/1) {
   html, body { height: 820px; }
 }
+
+/* ---------- theme: Charlotte Green / Niner Gold / Quartz White (UI chrome only; map and chart colors are set elsewhere) ---------- */
+.app-header { background: var(--accent); border-bottom: 3px solid var(--gold); }
+.app-title h1 { color: #fff; }
+.app-title .app-subtitle { color: #eef0e8; }
+.app-title p { color: var(--gold-light); }
+.tab { color: #dfe6df; }
+.tab:hover { background: rgba(255, 255, 255, .12); }
+.tab.is-active { color: #fff; border-color: var(--gold); background: rgba(255, 255, 255, .08); }
+.tab:focus-visible, .help-btn:focus-visible { outline-color: var(--gold-light); }
+.help-btn { background: transparent; border-color: var(--gold-light); color: #fff; }
+.help-btn:hover { background: var(--gold); border-color: var(--gold); color: #fff; }
+.card h2 { color: var(--accent); }
+.card { border-top: 3px solid var(--gold); }
+.btn { border-color: var(--accent); background: var(--accent); }
+.btn-sec { color: var(--accent); }
+.tour-box { border-top: 4px solid var(--gold); }
+.tour-box h2 { color: var(--accent); }
+.tour-overlay { background: rgba(8, 32, 24, .6); }
+.tour-spot { box-shadow: 0 0 0 9999px rgba(8, 32, 24, .6); border-color: var(--gold-light); }
+.app-footer { background: var(--accent); border-top: 3px solid var(--gold); color: #dfe6df; }
+.prose h2 { color: var(--accent); }
+.prose h3 { color: var(--text); }
+.prose a { color: var(--accent); }
